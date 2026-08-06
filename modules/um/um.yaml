@@ -1,0 +1,206 @@
+# UM 模块 Tera 项目配置
+# 版本: v1
+# 描述: 用户管理模块代码生成配置（Rust 后端）
+#
+# 配置文件结构：
+# - um.yaml: 主配置文件（本文件，包含实体配置）
+# - tasks/*.yaml: 各类任务配置（dto_tasks, domain_tasks, infra_tasks, proto_tasks, migration_tasks）
+
+project: um
+version: v1
+description: "用户管理模块"
+
+# 实体数据表配置
+entities:
+  - name: User
+    table_name: users
+    schema: sys
+    description: "用户实体"
+
+    # 隐藏字段配置（这些字段不会出现在 proto 中）
+    hidden_fields:
+      - encrypted_password
+
+    # Proto 导入路径配置（可选）
+    proto_imports:
+      - "common.proto"
+
+    # 服务方法配置（可选，如果未指定则使用默认的完整 CRUD）
+    service_methods:
+      - Get
+      - List
+      - GetPaged
+      - Create
+      - Update
+      - Delete
+      - BatchDelete
+
+    # 数据库约束配置
+    constraints:
+      - name: users_email_format_chk
+        expression: "length(email) >= 3 AND length(email) <= 320"
+      - name: users_password_nonempty_chk
+        expression: "length(encrypted_password) >= 20"
+      - name: users_display_name_len_chk
+        expression: "display_name IS NULL OR length(display_name) <= 255"
+      - name: users_meta_is_object_chk
+        expression: "jsonb_typeof(raw_user_meta_data) = 'object'"
+      - name: users_lock_consistency_chk
+        expression: "(is_locked = FALSE AND locked_at IS NULL) OR (is_locked = TRUE)"
+
+    # 索引字段配置（可选）
+    indexed_fields:
+      - is_active
+      - is_locked
+      - created_at
+      - tenant_id
+      - email
+
+    # 迁移依赖配置（可选）
+    migration_dependencies:
+      - "20251217000101_create_sys_schema.sql"
+      - "20251001000001_create_extensions.sql"
+
+    # 搜索路径配置（可选）
+    search_path:
+      - "{{ entity.schema }}"
+      - public
+      - extensions
+
+    # 实体字段（基于数据库表结构）
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        primary_key: true
+        description: "用户 ID"
+
+      - name: email
+        type: Email
+        rust_type: "shared_domain::value_objects::Email"
+        flutter_type: "String"
+        nullable: false
+        unique: true
+        description: "邮箱"
+        searchable: true
+        search_operator: "ILIKE"
+        search_description: "邮箱模糊搜索"
+
+      - name: encrypted_password
+        type: String
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "加密密码"
+
+      - name: display_name
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "显示名称"
+
+      - name: avatar_url
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "头像URL"
+
+      - name: phone
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "电话"
+
+      - name: roles
+        type: Vec<String>
+        rust_type: "Vec<String>"
+        flutter_type: "List<String>"
+        nullable: false
+        description: "角色列表"
+        searchable: true
+        search_operator: "&&"
+        search_description: "角色数组重叠查询"
+
+      - name: is_active
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否激活"
+        searchable: true
+        search_operator: "="
+        search_description: "激活状态精确匹配"
+
+      - name: is_locked
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否锁定"
+
+      - name: locked_at
+        type: Timestamp
+        rust_type: "Option<chrono::DateTime<chrono::Utc>>"
+        flutter_type: "DateTime"
+        nullable: true
+        description: "锁定时间"
+
+      - name: raw_user_meta_data
+        type: Json
+        rust_type: "serde_json::Value"
+        flutter_type: "Map<String, dynamic>"
+        nullable: false
+        default: "{}"
+        description: "用户元数据"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+        searchable: true
+        search_operator: "BETWEEN"
+        search_description: "创建时间范围查询"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: last_login_at
+        type: Timestamp
+        rust_type: "Option<chrono::DateTime<chrono::Utc>>"
+        flutter_type: "DateTime"
+        nullable: true
+        description: "最后登录时间"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        flutter_type: "int"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+      - name: tenant_id
+        type: String
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "租户 ID"
+
+# 任务配置
+# 注意：任务定义在 tasks/ 目录下，这里通过代码自动加载并合并
+tasks: []

@@ -1,0 +1,41 @@
+project: workspace/task
+version: v1
+description: "Workspace task standard module"
+
+workspace_module:
+  id: workspace/task
+  title: Workspace Tasks
+  icon: list-todo
+  capabilities:
+    - list
+    - detail
+    - create
+    - update
+    - delete
+    - sync
+  mount:
+    location: sidebar
+    entry: primary
+
+entities:
+  - name: Task
+    table_name: tasks
+    schema: workspace
+    description: "Workspace task entity"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        primary_key: true
+        description: "Task ID"
+
+      - name: title
+        type: String
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "Task title"
+
+tasks: []

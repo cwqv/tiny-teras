@@ -1,0 +1,193 @@
+syntax = "proto3";
+
+package {{ proto_package }};
+
+{# Proto 导入路径（可配置） #}
+{%- if entity.proto_imports is defined and entity.proto_imports | length > 0 %}
+  {%- for import_path in entity.proto_imports %}
+import "{{ proto_import_path }}/{{ import_path }}";
+  {%- endfor %}
+{%- endif %}
+
+{# 计算小写的实体名（用于字段名） #}
+{%- set entity_name_lower = entity.name | lower -%}
+
+{%- set service_name = entity.grpc_service_name | default(value=entity.name) -%}
+// ============ {{ service_name }}Service ============
+
+service {{ service_name }}Service {
+{%- if entity.resolved_service_methods is defined and entity.resolved_service_methods | length > 0 %}
+  {# 使用预处理的服务方法配置 #}
+  {%- for method in entity.resolved_service_methods %}
+  rpc {{ method.rpc_name }}({{ method.request }}) returns ({{ method.response }});
+  {%- endfor %}
+{%- else %}
+  {# 使用派生的 gRPC 方法名（Phase 3） #}
+  {%- set get_method = entity.grpc_get_method | default(value="Get" ~ entity.name) -%}
+  {%- set list_method = entity.grpc_list_method | default(value="List" ~ entity.name ~ "s") -%}
+  {%- set create_method = entity.grpc_create_method | default(value="Create" ~ entity.name) -%}
+  {%- set update_method = entity.grpc_update_method | default(value="Update" ~ entity.name) -%}
+  {%- set delete_method = entity.grpc_delete_method | default(value="Delete" ~ entity.name) -%}
+  {%- set batch_delete_method = entity.grpc_batch_delete_method | default(value="BatchDelete" ~ entity.name ~ "s") -%}
+  rpc {{ get_method }}(Get{{ entity.name }}Request) returns (Get{{ entity.name }}Response);
+  rpc {{ list_method }}(List{{ entity.name }}sRequest) returns (List{{ entity.name }}sResponse);
+  rpc Get{{ entity.name }}sPaged(Get{{ entity.name }}sPagedRequest) returns (Get{{ entity.name }}sPagedResponse);
+  rpc {{ create_method }}(Create{{ entity.name }}Request) returns (Create{{ entity.name }}Response);
+  rpc {{ update_method }}(Update{{ entity.name }}Request) returns (Update{{ entity.name }}Response);
+  rpc {{ delete_method }}(Delete{{ entity.name }}Request) returns (Empty);
+  rpc {{ batch_delete_method }}(BatchDelete{{ entity.name }}sRequest) returns (BatchDelete{{ entity.name }}sResponse);
+{%- endif %}
+}
+
+// ============ {{ entity.name }} Entity ============
+
+message {{ entity.name }} {
+{%- set field_index = 0 -%}
+{%- for field in entity.fields -%}
+{%- set is_hidden = false -%}
+{%- if entity.hidden_fields is defined -%}
+  {%- for hidden_field in entity.hidden_fields -%}
+    {%- if field.name == hidden_field -%}
+      {%- set is_hidden = true -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- if not is_hidden -%}
+  {%- if field.proto_number is defined -%}
+  {{ field.proto_type }} {{ field.name }} = {{ field.proto_number }};  // {{ field.description }}
+  {%- else -%}
+  {{ field.proto_type }} {{ field.name }} = {{ loop.index }};  // {{ field.description }}
+  {%- endif -%}
+{%- endif -%}
+{%- endfor %}
+}
+
+// ============ Get{{ entity.name }}Request ============
+
+message Get{{ entity.name }}Request {
+  string id = 1;
+
+}
+
+// ============ Get{{ entity.name }}Response ============
+
+message Get{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ List{{ entity.name }}sRequest ============
+
+message List{{ entity.name }}sRequest {
+{%- if entity.dto_fields is defined and entity.dto_fields.list is defined %}
+  {%- for field_config in entity.dto_fields.list %}
+    {%- if field_config.name != "limit" and field_config.name != "offset" %}
+      {%- if field_config.proto_number is defined %}
+  {{ field_config.proto_type }} {{ field_config.name }} = {{ field_config.proto_number }};
+      {%- else %}
+  {{ field_config.proto_type }} {{ field_config.name }} = {{ loop.index }};
+      {%- endif %}
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+}
+
+// ============ List{{ entity.name }}sResponse ============
+
+message List{{ entity.name }}sResponse {
+  repeated {{ entity.name }} {{ entity_name_lower }}s = 1;
+}
+
+// ============ Get{{ entity.name }}sPagedRequest ============
+
+message Get{{ entity.name }}sPagedRequest {
+{%- if entity.dto_fields is defined and entity.dto_fields.list is defined %}
+  {%- for field_config in entity.dto_fields.list %}
+    {%- if field_config.name != "limit" and field_config.name != "offset" %}
+      {%- if field_config.proto_number is defined %}
+  {{ field_config.proto_type }} {{ field_config.name }} = {{ field_config.proto_number }};
+      {%- else %}
+  {{ field_config.proto_type }} {{ field_config.name }} = {{ loop.index }};
+      {%- endif %}
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+{%- if features.pagination %}
+  int32 page = 1;
+  int32 page_size = 2;
+  string sort_by = 3;
+  bool sort_ascending = 4;
+{%- endif %}
+}
+
+// ============ Get{{ entity.name }}sPagedResponse ============
+
+message Get{{ entity.name }}sPagedResponse {
+  repeated {{ entity.name }} {{ entity_name_lower }}s = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// ============ Create{{ entity.name }}Request ============
+
+message Create{{ entity.name }}Request {
+{%- if entity.dto_fields is defined and entity.dto_fields.create is defined -%}
+{%- for field in entity.dto_fields.create -%}
+  {%- if field.proto_number is defined %}
+  {{ field.proto_type }} {{ field.name }} = {{ field.proto_number }};
+  {%- else %}
+  {{ field.proto_type }} {{ field.name }} = {{ loop.index }};
+  {%- endif %}
+{%- endfor -%}
+{%- endif %}
+}
+
+// ============ Create{{ entity.name }}Response ============
+
+message Create{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ Update{{ entity.name }}Request ============
+
+message Update{{ entity.name }}Request {
+{%- if entity.dto_fields is defined and entity.dto_fields.update is defined -%}
+{%- for field in entity.dto_fields.update -%}
+  {%- if field.proto_number is defined %}
+  {{ field.proto_type }} {{ field.name }} = {{ field.proto_number }};
+  {%- else %}
+  {{ field.proto_type }} {{ field.name }} = {{ loop.index }};
+  {%- endif %}
+{%- endfor -%}
+{%- endif %}
+}
+
+// ============ Update{{ entity.name }}Response ============
+
+message Update{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ Delete{{ entity.name }}Request ============
+
+message Delete{{ entity.name }}Request {
+  string id = 1;
+{%- if features.multi_tenant %}
+  string tenant_id = 2;
+{%- endif %}
+}
+
+// ============ BatchDelete{{ entity.name }}sRequest ============
+
+message BatchDelete{{ entity.name }}sRequest {
+  repeated string ids = 1;
+{%- if features.multi_tenant %}
+  string tenant_id = 2;
+{%- endif %}
+}
+
+// ============ BatchDelete{{ entity.name }}sResponse ============
+
+message BatchDelete{{ entity.name }}sResponse {
+  int32 deleted_count = 1;
+}

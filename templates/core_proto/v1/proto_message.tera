@@ -1,0 +1,47 @@
+{#- 
+  Proto Message Template
+  Generates standalone protocol buffer messages
+  Used for entity definitions, DTOs, and nested messages
+-#}
+{%- set entity_name_lower = entity.name | lower -%}
+
+syntax = "proto3";
+
+package {{ task.proto_package }};
+
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+// ============ Enums ============
+{% for enum in entity.enums %}
+/// {{ enum.description | default(value=enum.name) }}
+enum {{ enum.proto_enum_name }} {
+  // Default value (required by proto3)
+  {{ enum.proto_enum_name }}_UNSPECIFIED = 0;
+  {%- for variant in enum.variants %}
+  /// {{ variant.description | default(value=variant.display | default(value=variant.name)) }}
+  {{ enum.proto_enum_name }}_{{ variant.upper_case }} = {{ variant.proto_number }};
+  {%- endfor %}
+}
+
+{% endfor %}
+{%- endif %}
+
+// ============ {{ entity.name }} Message ============
+
+message {{ entity.name }} {
+{%- for field in entity.fields %}
+  {%- if field.proto_type %}
+    {%- set is_enum = false %}
+    {%- set enum_name = "" %}
+    {%- if entity.enums is defined and field.type is defined %}
+      {%- for enum in entity.enums %}
+        {%- if (field.type == enum.name) or (field.rust_type is defined and field.rust_type == enum.rust_enum_name) %}
+          {%- set is_enum = true %}
+          {%- set enum_name = enum.proto_enum_name %}
+          {%- break %}
+        {%- endif %}
+      {%- endfor %}
+    {%- endif %}
+  {% if is_enum %}{{ enum_name }}{% else %}{{ field.proto_type }}{% endif %} {{ field.name }} = {{ loop.index }};  // {{ field.description | default(value=field.name) }}
+  {%- endif %}
+{%- endfor %}
+}

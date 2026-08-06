@@ -1,0 +1,94 @@
+{# ERP State Machine 模板 — 从 YAML 枚举定义生成 state enum + impl StateMachine #}
+{# 预期 YAML 变量:                                                              #}
+{#   entity.name          — 实体名 (e.g. SaleOrder)                              #}
+{#   entity.enums[]       — 枚举列表，每个含 rust_enum_name, variants[], transitions #}
+{#   enum.transitions     — Map<variant_name, Vec<target_variant>>                #}
+{#   enum.terminal_states — Vec<variant_name> 终态列表                            #}
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
+
+use erp_shared::state_machine::StateMachine;
+
+{% for enum in entity.enums %}
+{% if enum.is_state_machine | default(value=false) %}
+// ============ {{ enum.rust_enum_name }} ============
+
+/// {{ enum.description | default(value=enum.name ~ " 状态机") }}
+///
+/// 说明：由 Tera 模板自动生成，请勿手动修改。
+/// 若需扩展，请使用 `<<< block:custom_impl` 标记。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum {{ enum.rust_enum_name }} {
+{%- for variant in enum.variants %}
+    /// {{ variant.description | default(value=variant.name) }}
+    {{ variant.pascal_case }},
+{%- endfor %}
+}
+
+impl Default for {{ enum.rust_enum_name }} {
+    fn default() -> Self {
+        Self::{{ enum.variants | first | get(key="pascal_case") }}
+    }
+}
+
+impl StateMachine for {{ enum.rust_enum_name }} {
+    fn allowed_transitions(&self) -> Vec<Self> {
+        match self {
+{%- for variant in enum.variants %}
+{%- set transitions = enum.transitions[variant.name] | default(value=[]) %}
+            Self::{{ variant.pascal_case }} => vec![
+{%- for target in transitions %}
+                Self::{{ target }},
+{%- endfor %}
+            ],
+{%- endfor %}
+        }
+    }
+
+    fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+{%- for terminal in enum.terminal_states | default(value=[]) %}
+            Self::{{ terminal }}{% if not loop.last %} |{% endif %}
+{%- endfor %}
+        )
+    }
+}
+
+// <<< block:custom_impl_{{ enum.rust_enum_name | snake_case }}
+// 在这里添加自定义方法（会在重新生成时保留）
+// >>> end:custom_impl_{{ enum.rust_enum_name | snake_case }}
+
+{% endif %}
+{% endfor %}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+{% for enum in entity.enums %}
+{% if enum.is_state_machine | default(value=false) %}
+    #[test]
+    fn test_{{ enum.rust_enum_name | snake_case }}_default() {
+        let state = {{ enum.rust_enum_name }}::default();
+        assert_eq!(state, {{ enum.rust_enum_name }}::{{ enum.variants | first | get(key="pascal_case") }});
+    }
+
+    #[test]
+    fn test_{{ enum.rust_enum_name | snake_case }}_transitions() {
+        let state = {{ enum.rust_enum_name }}::default();
+        let allowed = state.allowed_transitions();
+        assert!(!allowed.is_empty(), "默认状态应有可转换目标");
+    }
+
+    #[test]
+    fn test_{{ enum.rust_enum_name | snake_case }}_terminal() {
+{%- for terminal in enum.terminal_states | default(value=[]) %}
+        assert!({{ enum.rust_enum_name }}::{{ terminal }}.is_terminal());
+{%- endfor %}
+    }
+{% endif %}
+{% endfor %}
+}

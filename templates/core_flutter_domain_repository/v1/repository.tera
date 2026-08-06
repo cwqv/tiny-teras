@@ -1,0 +1,78 @@
+import 'package:shared_application/shared_application.dart';
+
+import '../entities/{{ entity.name | snake_case }}.dart';
+
+/// {{ entity.name }}仓储接口（Port）
+abstract class {{ entity.name }}Repository {
+{% if features.multi_tenant %}
+  /// 根据登录标识查找{{ entity.name }}（邮箱或用户名）
+  Future<Result<{{ entity.name }}?, Failure>> findByIdentifier({
+    required String tenantId,
+    required String identifier,
+  });
+
+{% endif %}
+  /// 根据{{ entity.name }} ID 查找{{ entity.name }}
+  Future<Result<{{ entity.name }}?, Failure>> findById({
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+{% if features.multi_tenant %}
+    required String tenantId,
+{% endif %}
+  });
+
+{% if features.multi_tenant %}
+  /// 更新最后登录时间
+  Future<Result<void, Failure>> touchLastLogin({
+    required String tenantId,
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+  });
+
+{% endif %}
+  /// 保存或更新{{ entity.name }}
+  Future<Result<{{ entity.name }}, Failure>> upsert({{ entity.name }} {{ entity.name | snake_case }});
+
+  /// 列出所有{{ entity.name }}
+  Future<Result<List<{{ entity.name }}>, Failure>> listAll();
+
+{% if features.multi_tenant %}
+  /// 按租户列出{{ entity.name }}
+  Future<Result<List<{{ entity.name }}>, Failure>> listByTenant({
+    required String tenantId,
+  });
+
+{% endif %}
+{% if features.search %}
+  /// 搜索{{ entity.name }}
+  ///
+  /// # 参数
+{% if features.multi_tenant %}
+  /// - `tenantId`: 租户ID（可选）
+{% endif %}
+  /// - `searchQuery`: 搜索关键词（可选）
+  /// - `roles`: 角色过滤（可选）
+  /// - `isActive`: 是否激活过滤（可选）
+  /// - `limit`: 限制返回数量（可选）
+  /// - `offset`: 偏移量（可选）
+  Future<Result<List<{{ entity.name }}>, Failure>> search({
+{% if features.multi_tenant %}
+    String? tenantId,
+{% endif %}
+    String? searchQuery,
+    List<String>? roles,
+    bool? isActive,
+    int? limit,
+    int? offset,
+  });
+
+{% endif %}
+  /// 更新{{ entity.name }}
+  Future<Result<{{ entity.name }}, Failure>> update({{ entity.name }} {{ entity.name | snake_case }});
+
+  /// 删除{{ entity.name }}{% if features.soft_delete %}（软删除：设置 isDeleted = true）{% endif %}
+  Future<Result<void, Failure>> delete({
+{% if features.multi_tenant %}
+    required String tenantId,
+{% endif %}
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+  });
+}

@@ -1,0 +1,394 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+
+use crate::domain::entities::{{ entity.name }};
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+use crate::domain::entities::{% for enum in entity.enums %}{{ enum.rust_enum_name }}{% if not loop.last %}, {% endif %}{% endfor %};
+{%- endif %}
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// PostgreSQL {{ entity.name }}仓储实现
+pub struct Postgres{{ entity.name }}Repository {
+    pool: Arc<PgPool>,
+}
+
+impl Postgres{{ entity.name }}Repository {
+    pub fn new(pool: Arc<PgPool>) -> Self {
+        Self { pool }
+    }
+
+    /// 数据库行转领域实体
+    fn row_to_entity(row: {{ entity.name }}Row) -> {{ entity.name }} {
+        {{ entity.name }} {
+{% for field in entity.fields %}
+            {%- set is_hashmap_field = false %}
+            {%- if field.type == "HashMap<String, String>" or (field.rust_type is defined and "HashMap" in field.rust_type) %}
+              {%- set is_hashmap_field = true %}
+            {%- endif %}
+            {{ field.name }}: {% if field.type == "Email" %}shared_domain::value_objects::Email::new(&row.{% if field.name == "email" %}email{% else %}{{ field.name }}{% endif %}).unwrap_or_else(|_| {
+                shared_domain::value_objects::Email::new("invalid@example.com").unwrap()
+            }){% elif field.name == "roles" and field.type == "Vec<String>" %}vec![row.role]{% elif field.is_enum %}{{ field.enum_rust_name }}::from_str(&row.{{ field.name }}).unwrap_or_default(){% elif is_hashmap_field %}serde_json::from_value(row.{{ field.name }}.clone()).unwrap_or_default(){% elif field.primary_key %}row.id{% else %}row.{{ field.name }}{% endif %},
+{% endfor %}
+        }
+    }
+}
+
+/// 数据库行结构（从 {{ entity.schema }}.{{ entity.table_name }} 查询结果）
+#[derive(sqlx::FromRow)]
+struct {{ entity.name }}Row {
+{% for field in entity.fields %}
+    {%- set is_hashmap_field = false %}
+    {%- if field.type == "HashMap<String, String>" or (field.rust_type is defined and "HashMap" in field.rust_type) %}
+      {%- set is_hashmap_field = true %}
+    {%- endif %}
+    {% if field.primary_key %}id{% else %}{{ field.name }}{% endif %}: {% if field.type == "Uuid" %}Uuid{% elif field.type == "Email" %}String{% elif field.name == "roles" and field.type == "Vec<String>" %}String{% elif field.is_enum %}String{% elif is_hashmap_field %}serde_json::Value{% else %}{{ field.rust_type }}{% endif %},
+{% endfor %}
+    {% if entity.name == "UserCredential" %}role: String,{% endif %}
+}
+
+#[async_trait]
+impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
+{% if features.multi_tenant %}
+    async fn find_by_login(
+        &self,
+        tenant_id: &str,
+        login: &str,
+    ) -> ApplicationResult<Option<{{ entity.name }}>> {
+        let email = login.trim().to_lowercase();
+
+        let result = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"
+            SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+            WHERE tenant_id = $1 AND email = $2
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(&email)
+        .fetch_optional(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("数据库查询失败: {}", e)))?;
+
+        Ok(result.map(Self::row_to_entity))
+    }
+
+{% endif %}
+    async fn find_by_id(&self, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<Option<{{ entity.name }}>> {
+        {%- if entity.relationships is defined and entity.relationships | length > 0 %}
+        {%- set has_eager_load = false %}
+        {%- for relationship in entity.relationships %}
+          {%- if relationship.eager_load %}
+            {%- set has_eager_load = true %}
+          {%- endif %}
+        {%- endfor %}
+        {%- if has_eager_load %}
+        // 使用 JOIN 查询预加载关系
+        let query = format!(
+            r#"
+            SELECT 
+                p.*
+                {%- for relationship in entity.relationships %}
+                {%- if relationship.eager_load and (relationship.relation_type == "ManyToOne" or relationship.relation_type == "many_to_one") %}
+                , c.id as category_id_loaded, c.name as category_name_loaded
+                {%- endif %}
+                {%- endfor %}
+            FROM {{ entity.schema }}.{{ entity.table_name }} p
+            {%- for relationship in entity.relationships %}
+            {%- if relationship.eager_load and (relationship.relation_type == "ManyToOne" or relationship.relation_type == "many_to_one") %}
+            LEFT JOIN {{ relationship.target_schema | default(value=entity.schema) }}.{{ relationship.target_snake_case }}s c ON p.{{ relationship.foreign_key }} = c.id
+            {%- endif %}
+            {%- endfor %}
+            WHERE p.{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = $1
+            "#
+        );
+        {%- else %}
+        let query = r#"
+            SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+            WHERE {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = $1
+            "#;
+        {%- endif %}
+        {%- else %}
+        let query = r#"
+            SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+            WHERE {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = $1
+            "#;
+        {%- endif %}
+        let result = sqlx::query_as::<_, {{ entity.name }}Row>(query)
+        .bind({% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %})
+        .fetch_optional(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("数据库查询失败: {}", e)))?;
+
+        Ok(result.map(Self::row_to_entity))
+    }
+
+{% if features.multi_tenant %}
+    async fn touch_last_login(&self, tenant_id: &str, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE {{ entity.schema }}.{{ entity.table_name }}
+            SET last_login_at = NOW()
+            WHERE tenant_id = $1 AND {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = $2
+            "#,
+        )
+        .bind(tenant_id)
+        .bind({% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %})
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("更新失败: {}", e)))?;
+
+        Ok(())
+    }
+
+{% endif %}
+    async fn upsert(&self, {{ entity.name | snake_case }}: {{ entity.name }}) -> ApplicationResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO {{ entity.schema }}.{{ entity.table_name }} (
+{% for field in entity.fields %}
+                {{ field.name }}{% if not loop.last %},{% endif %}
+{% endfor %}
+            )
+            VALUES (
+{% for field in entity.fields %}
+                ${{ loop.index }}{% if not loop.last %},{% endif %}
+{% endfor %}
+            )
+            ON CONFLICT ({% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}) DO UPDATE SET
+{% for field in entity.fields %}
+{% if not field.primary_key %}
+                {{ field.name }} = EXCLUDED.{{ field.name }}{% if not loop.last %},{% endif %}
+{% endif %}
+{% endfor %}
+            "#,
+        )
+{% for field in entity.fields %}
+            {%- set is_hashmap_field = false %}
+            {%- if field.type == "HashMap<String, String>" or (field.rust_type is defined and "HashMap" in field.rust_type) %}
+              {%- set is_hashmap_field = true %}
+            {%- endif %}
+        .bind({% if field.type == "Email" %}{{ entity.name | snake_case }}.{{ field.name }}.as_str(){% elif field.is_enum %}{{ entity.name | snake_case }}.{{ field.name }}.as_str(){% elif is_hashmap_field %}serde_json::to_value(&{{ entity.name | snake_case }}.{{ field.name }}).unwrap(){% else %}{{ entity.name | snake_case }}.{{ field.name }}{% endif %})
+{% endfor %}
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("保存失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    async fn list_all(&self) -> ApplicationResult<Vec<{{ entity.name }}>> {
+        let rows = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"
+            SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+            ORDER BY created_at DESC
+            "#,
+        )
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("查询失败: {}", e)))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entity).collect())
+    }
+
+{% if features.multi_tenant %}
+    async fn list_by_tenant(&self, tenant_id: &str) -> ApplicationResult<Vec<{{ entity.name }}>> {
+        let rows = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"
+            SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("查询失败: {}", e)))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entity).collect())
+    }
+
+{% if entity.select_with_joins is defined and entity.select_with_joins | length > 0 -%}
+    {# 使用派生的 JOIN 查询 SQL #}
+    async fn list_by_tenant_with_relations(&self, tenant_id: &str) -> ApplicationResult<Vec<{{ entity.name }}>> {
+        let rows = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"
+{{ entity.select_with_joins | indent(width=12) }}
+            WHERE {{ entity.table_name }}.tenant_id = $1
+            ORDER BY {{ entity.table_name }}.created_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("查询关联数据失败: {}", e)))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entity).collect())
+    }
+{% endif -%}
+
+{% endif %}
+{% if features.search %}
+    async fn search(
+        &self,
+{% if features.multi_tenant %}
+        tenant_id: Option<&str>,
+{% endif %}
+{%- if entity.resolved_searchable_fields is defined and entity.resolved_searchable_fields | length > 0 %}
+  {%- for field in entity.resolved_searchable_fields %}
+        {{ field.name }}: {{ field.param_type }},
+  {%- endfor %}
+{%- endif %}
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> ApplicationResult<Vec<{{ entity.name }}>> {
+        let mut query = String::from("SELECT * FROM {{ entity.schema }}.{{ entity.table_name }} WHERE 1=1");
+        let mut params: Vec<String> = Vec::new();
+        let mut param_index = 1;
+
+{% if features.multi_tenant %}
+        if let Some(tid) = tenant_id {
+            query.push_str(&format!(" AND tenant_id = ${}", param_index));
+            params.push(tid.to_string());
+            param_index += 1;
+        }
+{% endif %}
+{%- if entity.resolved_searchable_fields is defined and entity.resolved_searchable_fields | length > 0 %}
+  {%- for field in entity.resolved_searchable_fields %}
+    {%- if field.operator == "ILIKE" or field.operator == "LIKE" %}
+        if let Some(val) = {{ field.name }} {
+            query.push_str(&format!(" AND {{ field.name }} {{ field.operator }} ${}", param_index));
+            params.push(format!("%{}%", val));
+            param_index += 1;
+        }
+    {%- elif field.operator == "=" or field.operator == "!=" %}
+        if let Some(val) = {{ field.name }} {
+            query.push_str(&format!(" AND {{ field.name }} {{ field.operator }} ${}", param_index));
+            params.push(val.to_string());
+            param_index += 1;
+        }
+    {%- elif field.operator == ">" or field.operator == "<" or field.operator == ">=" or field.operator == "<=" %}
+        if let Some(val) = {{ field.name }} {
+            query.push_str(&format!(" AND {{ field.name }} {{ field.operator }} ${}", param_index));
+            params.push(val.to_string());
+            param_index += 1;
+        }
+    {%- elif field.operator == "IN" %}
+        if let Some(val) = {{ field.name }} {
+            if !val.is_empty() {
+                let placeholders: Vec<String> = (0..val.len())
+                    .map(|i| format!("${}", param_index + i))
+                    .collect();
+                query.push_str(&format!(" AND {{ field.name }} IN ({})", placeholders.join(", ")));
+                for v in val {
+                    params.push(v.to_string());
+                    param_index += 1;
+                }
+            }
+        }
+    {%- elif field.operator == "BETWEEN" %}
+        if let (Some(min_val), Some(max_val)) = {{ field.name }} {
+            query.push_str(&format!(" AND {{ field.name }} BETWEEN ${} AND ${}", param_index, param_index + 1));
+            params.push(min_val.to_string());
+            params.push(max_val.to_string());
+            param_index += 2;
+        }
+    {%- elif field.operator == "&&" %}
+        if let Some(val) = {{ field.name }} {
+            if !val.is_empty() {
+                query.push_str(&format!(" AND {{ field.name }} && ${}", param_index));
+                params.push(format!("ARRAY[{}]", val.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(",")));
+                param_index += 1;
+            }
+        }
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+        query.push_str(" ORDER BY created_at DESC");
+        if let Some(lim) = limit {
+            query.push_str(&format!(" LIMIT ${}", param_index));
+            params.push(lim.to_string());
+            param_index += 1;
+        }
+        if let Some(off) = offset {
+            query.push_str(&format!(" OFFSET ${}", param_index));
+            params.push(off.to_string());
+        }
+
+        // 注意：这里简化了，实际应该使用 sqlx 的参数化查询
+        let rows = sqlx::query_as::<_, {{ entity.name }}Row>(&query)
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e| ApplicationError::internal(format!("搜索失败: {}", e)))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entity).collect())
+    }
+
+{% endif %}
+    async fn update(&self, {{ entity.name | snake_case }}: {{ entity.name }}) -> ApplicationResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE {{ entity.schema }}.{{ entity.table_name }}
+            SET
+{% for field in entity.fields %}
+{% if not field.primary_key %}
+                {{ field.name }} = ${{ loop.index }}{% if not loop.last %},{% endif %}
+{% endif %}
+{% endfor %}
+            WHERE {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = ${{ entity.fields | length }}
+            "#,
+        )
+{% for field in entity.fields %}
+{% if not field.primary_key %}
+            {%- set is_hashmap_field = false %}
+            {%- if field.type == "HashMap<String, String>" or (field.rust_type is defined and "HashMap" in field.rust_type) %}
+              {%- set is_hashmap_field = true %}
+            {%- endif %}
+        .bind({% if field.type == "Email" %}{{ entity.name | snake_case }}.{{ field.name }}.as_str(){% elif field.is_enum %}{{ entity.name | snake_case }}.{{ field.name }}.as_str(){% elif is_hashmap_field %}serde_json::to_value(&{{ entity.name | snake_case }}.{{ field.name }}).unwrap(){% else %}{{ entity.name | snake_case }}.{{ field.name }}{% endif %})
+{% endif %}
+{% endfor %}
+        .bind({{ entity.name | snake_case }}.{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %})
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("更新失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    async fn delete(&self{% if features.multi_tenant %}, tenant_id: &str{% endif %}, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<()> {
+{% if features.soft_delete %}
+        sqlx::query(
+            r#"
+            UPDATE {{ entity.schema }}.{{ entity.table_name }}
+            SET is_active = false
+            WHERE {% if features.multi_tenant %}tenant_id = $1 AND {% endif %}{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {% if features.multi_tenant %}$2{% else %}$1{% endif %}
+            "#,
+        )
+{% if features.multi_tenant %}
+        .bind(tenant_id)
+{% endif %}
+        .bind({% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %})
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("删除失败: {}", e)))?;
+{% else %}
+        sqlx::query(
+            r#"
+            DELETE FROM {{ entity.schema }}.{{ entity.table_name }}
+            WHERE {% if features.multi_tenant %}tenant_id = $1 AND {% endif %}{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {% if features.multi_tenant %}$2{% else %}$1{% endif %}
+            "#,
+        )
+{% if features.multi_tenant %}
+        .bind(tenant_id)
+{% endif %}
+        .bind({% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %})
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("删除失败: {}", e)))?;
+{% endif %}
+        Ok(())
+    }
+}

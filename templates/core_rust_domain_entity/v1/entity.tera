@@ -1,0 +1,200 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+{% for field in entity.fields %}
+{% if field.type == "Email" %}
+use shared_domain::value_objects::Email;
+{% break %}
+{% endif %}
+{% endfor %}
+
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+// ============ Enums ============
+{% for enum in entity.enums %}
+/// {{ enum.description | default(value=enum.name) }}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum {{ enum.rust_enum_name }} {
+    {%- for variant in enum.variants %}
+    {%- if loop.first %}
+    #[default]
+    {%- endif %}
+    /// {{ variant.description | default(value=variant.display | default(value=variant.name)) }}
+    #[serde(rename = "{{ variant.value | as_str | default(value=variant.snake_case) }}")]
+    {{ variant.pascal_case }}{% if not loop.last %},{% endif %}
+    {%- endfor %}
+}
+
+impl {{ enum.rust_enum_name }} {
+    /// 从数据库值创建枚举
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            {%- for variant in enum.variants %}
+            "{{ variant.value | as_str | default(value=variant.snake_case) }}" => Some({{ enum.rust_enum_name }}::{{ variant.pascal_case }}),
+            {%- endfor %}
+            _ => None,
+        }
+    }
+
+    /// 转换为数据库值
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            {%- for variant in enum.variants %}
+            {{ enum.rust_enum_name }}::{{ variant.pascal_case }} => "{{ variant.value | as_str | default(value=variant.snake_case) }}",
+            {%- endfor %}
+        }
+    }
+
+    /// 获取显示文本
+    pub fn display(&self) -> &'static str {
+        match self {
+            {%- for variant in enum.variants %}
+            {{ enum.rust_enum_name }}::{{ variant.pascal_case }} => "{{ variant.display | default(value=variant.name) }}",
+            {%- endfor %}
+        }
+    }
+}
+
+{% endfor %}
+{%- endif %}
+
+/// {{ entity.description }}
+///
+/// 说明：
+/// - 不重复定义 Email/错误等通用概念，复用 shared_domain。
+{% if entity.description %}
+/// - {{ entity.description }}
+{% endif %}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }} {
+{% for field in entity.fields %}
+    /// {{ field.description }}
+    pub {{ field.name }}: {{ field.rust_type }},
+{% endfor %}
+}
+
+impl {{ entity.name }} {
+{% for field in entity.fields %}
+{% if field.name == "is_active" %}
+    /// 确保{{ entity.name }}处于激活状态
+    pub fn ensure_active(&self) -> ApplicationResult<()> {
+        if self.is_active {
+            Ok(())
+        } else {
+            Err(ApplicationError::forbidden("{{ entity.name }}已被禁用"))
+        }
+    }
+{% break %}
+{% endif %}
+{% endfor %}
+
+{%- if entity.validations is defined and entity.validations | length > 0 %}
+    /// 验证实体数据
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        {#- 在函数开头统一导入所有可能需要的模块 -#}
+        {%- if entity.validation_needs_decimal %}
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
+        {%- endif %}
+        {%- if entity.validation_needs_regex %}
+        use regex::Regex;
+        {%- endif %}
+        let mut errors = Vec::new();
+        
+        {%- for validation in entity.validations %}
+        {%- set field_name = validation.field %}
+        {%- set field_rust_type = validation.field_rust_type | default(value="") %}
+        // 验证字段: {{ field_name }}
+        {%- for rule in validation.rules %}
+        {%- if rule.type == "required" %}
+        {%- if "Decimal" in field_rust_type %}
+        if self.{{ field_name }} == Decimal::ZERO {
+            errors.push("{{ rule.message | default(value=field_name ~ "不能为空") }}".to_string());
+        }
+        {%- elif "Option" in field_rust_type %}
+        if self.{{ field_name }}.is_none() {
+            errors.push("{{ rule.message | default(value=field_name ~ "不能为空") }}".to_string());
+        }
+        {%- else %}
+        if self.{{ field_name }}.is_empty() {
+            errors.push("{{ rule.message | default(value=field_name ~ "不能为空") }}".to_string());
+        }
+        {%- endif %}
+        {%- elif rule.type == "length" %}
+        {%- if rule.min is defined %}
+        if self.{{ field_name }}.len() < {{ rule.min }} {
+            errors.push("{{ rule.message | default(value=field_name ~ "长度不能少于" ~ rule.min ~ "个字符") }}".to_string());
+        }
+        {%- endif %}
+        {%- if rule.max is defined %}
+        if self.{{ field_name }}.len() > {{ rule.max }} {
+            errors.push("{{ rule.message | default(value=field_name ~ "长度不能超过" ~ rule.max ~ "个字符") }}".to_string());
+        }
+        {%- endif %}
+        {%- elif rule.type == "range" %}
+        {%- if "Decimal" in field_rust_type %}
+        {%- if rule.min is defined %}
+        {
+            let min_val = Decimal::from_str("{{ rule.min }}").unwrap_or(Decimal::ZERO);
+            if self.{{ field_name }} < min_val {
+                errors.push("{{ rule.message | default(value=field_name ~ "不能小于" ~ rule.min) }}".to_string());
+            }
+        }
+        {%- endif %}
+        {%- if rule.max is defined %}
+        {
+            let max_val = Decimal::from_str("{{ rule.max }}").unwrap_or(Decimal::MAX);
+            if self.{{ field_name }} > max_val {
+                errors.push("{{ rule.message | default(value=field_name ~ "不能大于" ~ rule.max) }}".to_string());
+            }
+        }
+        {%- endif %}
+        {%- elif "Option<f64>" in field_rust_type or "Option<f32>" in field_rust_type %}
+        if let Some(val) = self.{{ field_name }} {
+        {%- if rule.min is defined %}
+            if val < {{ rule.min }}.0 {
+                errors.push("{{ rule.message | default(value=field_name ~ "不能小于" ~ rule.min) }}".to_string());
+            }
+        {%- endif %}
+        {%- if rule.max is defined %}
+            if val > {{ rule.max }}.0 {
+                errors.push("{{ rule.message | default(value=field_name ~ "不能大于" ~ rule.max) }}".to_string());
+            }
+        {%- endif %}
+        }
+        {%- else %}
+        {%- if rule.min is defined %}
+        if self.{{ field_name }} < {{ rule.min }} {
+            errors.push("{{ rule.message | default(value=field_name ~ "不能小于" ~ rule.min) }}".to_string());
+        }
+        {%- endif %}
+        {%- if rule.max is defined %}
+        if self.{{ field_name }} > {{ rule.max }} {
+            errors.push("{{ rule.message | default(value=field_name ~ "不能大于" ~ rule.max) }}".to_string());
+        }
+        {%- endif %}
+        {%- endif %}
+        {%- elif rule.type == "pattern" %}
+        {
+            let re = Regex::new(r"{{ rule.regex }}").unwrap();
+            if !re.is_match(&self.{{ field_name }}) {
+                errors.push("{{ rule.message | default(value=field_name ~ "格式不正确") }}".to_string());
+            }
+        }
+        {%- endif %}
+        {%- endfor %}
+        {%- endfor %}
+        
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+{%- endif %}
+
+// <<< block:custom_methods
+// 在这里添加自定义方法（会在重新生成时保留）
+// >>> end:custom_methods
+}

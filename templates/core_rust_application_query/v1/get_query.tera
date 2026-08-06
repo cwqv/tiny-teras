@@ -1,0 +1,20 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use uuid::Uuid;
+
+/// Get {{ entity.description | default(value=entity.name) }} Query
+#[derive(Debug, Clone)]
+pub struct Get{{ entity_pascal }}Query {
+    /// {{ entity.name }} ID
+    pub {{ entity_snake }}_id: Uuid,
+}
+
+impl Get{{ entity_pascal }}Query {
+    pub fn new({{ entity_snake }}_id: Uuid) -> Self {
+        Self { {{ entity_snake }}_id }
+    }
+}
+
+// <<< block:custom_get_query_methods
+// 自定义查询方法（在此添加自定义的查询逻辑）
+// >>> end:custom_get_query_methods

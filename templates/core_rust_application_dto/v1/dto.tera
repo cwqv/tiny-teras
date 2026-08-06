@@ -1,0 +1,84 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+use crate::domain::entities::{% for enum in entity.enums %}{{ enum.rust_enum_name }}{% if not loop.last %}, {% endif %}{% endfor %};
+{%- endif %}
+
+{%- if entity.dto_fields.create is defined and entity.dto_fields.create | length > 0 %}
+/// 创建{{ entity.name }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Create{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.create %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endfor %}
+}
+{%- endif %}
+
+{%- if entity.dto_fields.created is defined or entity.dto_fields.create is defined %}
+/// 创建{{ entity.name }}响应 DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Created{{ entity.name }}Dto {
+    /// {{ entity.name }} ID
+    pub {{ entity.name | lower }}_id: uuid::Uuid,
+{%- if features.multi_tenant %}
+    /// 租户 ID
+    pub tenant_id: String,
+{%- endif %}
+}
+{%- endif %}
+
+{%- if entity.dto_fields.get is defined and entity.dto_fields.get | length > 0 %}
+/// 获取{{ entity.name }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Get{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.get %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endfor %}
+}
+{%- endif %}
+
+{%- if entity.dto_fields.list is defined and entity.dto_fields.list | length > 0 %}
+/// 列表查询{{ entity.name }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct List{{ entity.name }}sDto {
+{%- for field in entity.dto_fields.list %}
+    /// {{ field.description | default(value=field.name) }}（可选）
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endfor %}
+}
+{%- endif %}
+
+{%- if entity.dto_fields.update is defined and entity.dto_fields.update | length > 0 %}
+/// 更新{{ entity.name }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Update{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.update %}
+  {%- if field.name == "id" %}
+    /// {{ entity.name }} ID
+    pub {{ entity.name | lower }}_id: uuid::Uuid,
+  {%- else %}
+    /// {{ field.description | default(value=field.name) }}（可选）
+    pub {{ field.name }}: {{ field.rust_type }},
+  {%- endif %}
+{%- endfor %}
+}
+{%- endif %}
+
+{%- if entity.dto_fields.delete is defined and entity.dto_fields.delete | length > 0 %}
+/// 删除{{ entity.name }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Delete{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.delete %}
+  {%- if field.name == "id" %}
+    /// {{ entity.name }} ID
+    pub {{ entity.name | lower }}_id: uuid::Uuid,
+  {%- else %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name }}: {{ field.rust_type }},
+  {%- endif %}
+{%- endfor %}
+}
+{%- endif %}

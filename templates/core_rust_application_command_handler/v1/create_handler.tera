@@ -1,0 +1,126 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use std::sync::Arc;
+
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+use shared_application::services::authentication_service::{
+    AuthenticationService, AuthenticationServiceTrait,
+};
+use shared_infra_events::unified::event_service::UnifiedEventService;
+
+use crate::application::commands::create_{{ entity_snake }}_command::{Create{{ entity_pascal }}Command, Create{{ entity_pascal }}Result};
+use crate::domain::entities::{{ entity_snake }}::{{ entity_pascal }};
+use crate::domain::events::{{ entity_pascal }}CreatedEvent;
+use crate::domain::repositories::{{ entity_snake }}_repository::{{ entity_pascal }}Repository;
+
+/// Command handler for creating {{ entity.description | default(value=entity.name) }}
+pub struct Create{{ entity_pascal }}CommandHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    repo: Arc<R>,
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+    auth_service: Arc<AuthenticationService>,
+{% endif %}
+    event_service: Option<Arc<UnifiedEventService>>,
+}
+
+impl<R> Create{{ entity_pascal }}CommandHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    pub fn new(
+        repo: Arc<R>,
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+        auth_service: AuthenticationService,
+{% endif %}
+    ) -> Self {
+        Self {
+            repo,
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+            auth_service: Arc::new(auth_service),
+{% endif %}
+            event_service: None,
+        }
+    }
+
+    /// 设置事件服务（可选）
+    pub fn with_event_service(mut self, event_service: Arc<UnifiedEventService>) -> Self {
+        self.event_service = Some(event_service);
+        self
+    }
+
+    pub async fn execute(&self, command: Create{{ entity_pascal }}Command) -> ApplicationResult<Create{{ entity_pascal }}Result> {
+        // 业务规则验证
+{% for field in entity.fields %}
+{% if  "Email" in field.rust_type  %}
+        // Email 格式已在 Email 值对象中验证
+{% break %}
+{% endif %}
+{% endfor %}
+
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+        // 密码强度验证
+        if command.password.len() < 8 {
+            return Err(ApplicationError::validation_single("密码长度至少8位"));
+        }
+
+        // 密码哈希
+        let password_hash = AuthenticationServiceTrait::hash_password(
+            self.auth_service.as_ref(),
+            &command.password,
+        )
+        .map_err(|e| ApplicationError::internal(format!("密码哈希失败: {}", e)))?;
+{% endif %}
+
+        // 生成 ID
+        let {{ entity_snake }}_id = Uuid::new_v4();
+
+        // 创建实体
+        let entity = {{ entity_pascal }} {
+            id: {{ entity_snake }}_id,
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "created_at" or field.name == "updated_at" %}
+{% continue %}
+{% elif field.name == "password_hash" or field.name == "encrypted_password" %}
+            {{ field.name | snake_case }}: password_hash,
+{% else %}
+            {{ field.name | snake_case }}: command.{{ field.name | snake_case }},
+{% endif %}
+{% endif %}
+{% endfor %}
+        };
+
+        // 保存到数据库
+        self.repo.create(entity.clone()).await?;
+
+        // 发布领域事件（如果配置了事件服务）
+        if let Some(event_service) = &self.event_service {
+            let event = {{ entity_pascal }}CreatedEvent::new(
+                {{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+                command.tenant_id.clone(),
+{% endif %}
+            );
+            
+            // 异步发布事件（不阻塞主流程）
+            if let Err(e) = event_service.publish_event(Box::new(event)).await {
+                tracing::warn!("Failed to publish {{ entity_pascal }}CreatedEvent: {}", e);
+            }
+        }
+
+        Ok(Create{{ entity_pascal }}Result::new(
+            {{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            command.tenant_id,
+{% endif %}
+        ))
+    }
+}
+
+// <<< block:custom_create_handler_methods
+// 自定义创建处理器方法（在此添加自定义的处理逻辑）
+// >>> end:custom_create_handler_methods

@@ -1,0 +1,195 @@
+{%- if method.name == "Create" %}
+use shared_domain::value_objects::Email;
+use uuid::Uuid;
+
+/// Command for creating a new {{ entity.name | snake_case }}
+#[derive(Debug, Clone)]
+pub struct Create{{ entity.name }}Command {
+{%- if features.multi_tenant %}
+    pub tenant_id: String,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+{%- if field.type == "Email" %}
+    pub {{ field.name }}: Email,
+{%- elif field.name == "password" %}
+    pub {{ field.name }}: String,
+{%- elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}
+    pub {{ field.name }}: Vec<String>,
+{%- else %}
+    pub {{ field.name }}: {{ field.type }},
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+}
+
+impl Create{{ entity.name }}Command {
+    pub fn new(
+{%- if features.multi_tenant %}
+        tenant_id: String,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+{%- if field.type == "Email" %}
+        {{ field.name }}: Email,
+{%- elif field.name == "password" %}
+        {{ field.name }}: String,
+{%- elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}
+        {{ field.name }}: Vec<String>,
+{%- else %}
+        {{ field.name }}: {{ field.type }},
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+    ) -> Self {
+        Self {
+{%- if features.multi_tenant %}
+            tenant_id,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+            {{ field.name }},
+{%- endif %}
+{%- endfor %}
+        }
+    }
+}
+
+/// Result of create {{ entity.name | snake_case }} operation
+#[derive(Debug, Clone)]
+pub struct Create{{ entity.name }}Result {
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+    pub tenant_id: String,
+{%- endif %}
+}
+
+impl Create{{ entity.name }}Result {
+    pub fn new({{ entity.name | snake_case }}_id: Uuid{% if features.multi_tenant %}, tenant_id: String{% endif %}) -> Self {
+        Self {
+            {{ entity.name | snake_case }}_id,
+{%- if features.multi_tenant %}
+            tenant_id,
+{%- endif %}
+        }
+    }
+}
+
+{%- elif method.name == "Update" %}
+use shared_domain::value_objects::Email;
+use uuid::Uuid;
+
+/// Command for updating a {{ entity.name | snake_case }}
+#[derive(Debug, Clone)]
+pub struct Update{{ entity.name }}Command {
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+    pub tenant_id: String,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+    pub {{ field.name }}: Option<{% if field.type == "Email" %}Email{% elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}Vec<String>{% else %}{{ field.type }}{% endif %}>,
+{%- endif %}
+{%- endfor %}
+}
+
+impl Update{{ entity.name }}Command {
+    pub fn new(
+        {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+        tenant_id: String,
+{%- endif %}
+    ) -> Self {
+        Self {
+            {{ entity.name | snake_case }}_id,
+{%- if features.multi_tenant %}
+            tenant_id,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+            {{ field.name }}: None,
+{%- endif %}
+{%- endfor %}
+        }
+    }
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+{%- if field.type == "Email" %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: Email) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- elif field.name == "password" %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: String) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: Vec<String>) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- else %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: {{ field.type }}) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+}
+
+/// Result of update {{ entity.name | snake_case }} operation
+#[derive(Debug, Clone)]
+pub struct Update{{ entity.name }}Result {
+    pub {{ entity.name | snake_case }}_id: Uuid,
+}
+
+impl Update{{ entity.name }}Result {
+    pub fn new({{ entity.name | snake_case }}_id: Uuid) -> Self {
+        Self { {{ entity.name | snake_case }}_id }
+    }
+}
+
+{%- elif method.name == "Delete" %}
+use uuid::Uuid;
+
+/// Command for deleting a {{ entity.name | snake_case }}
+#[derive(Debug, Clone)]
+pub struct Delete{{ entity.name }}Command {
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+    pub tenant_id: String,
+{%- endif %}
+}
+
+impl Delete{{ entity.name }}Command {
+    pub fn new(
+        {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+        tenant_id: String,
+{%- endif %}
+    ) -> Self {
+        Self {
+            {{ entity.name | snake_case }}_id,
+{%- if features.multi_tenant %}
+            tenant_id,
+{%- endif %}
+        }
+    }
+}
+
+/// Result of delete {{ entity.name | snake_case }} operation
+#[derive(Debug, Clone)]
+pub struct Delete{{ entity.name }}Result {
+    pub success: bool,
+}
+
+impl Delete{{ entity.name }}Result {
+    pub fn new(success: bool) -> Self {
+        Self { success }
+    }
+}
+
+{%- endif %}
+

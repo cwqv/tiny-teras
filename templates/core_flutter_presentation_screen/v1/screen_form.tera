@@ -1,0 +1,211 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../providers/{{ entity.name | snake_case }}_providers.dart';
+import '../../application/dto/user_dto.dart';
+import '../../domain/entities/{{ entity.name | snake_case }}.dart';
+
+/// {{ entity.name }}表单页面（创建/更新）
+class {{ entity.name }}FormScreen extends ConsumerStatefulWidget {
+{% if features.multi_tenant %}
+  final String tenantId;
+{% endif %}
+  final {{ entity.name }}? entity;
+
+  const {{ entity.name }}FormScreen({
+    super.key,
+{% if features.multi_tenant %}
+    required this.tenantId,
+{% endif %}
+    this.entity,
+  });
+
+  @override
+  ConsumerState<{{ entity.name }}FormScreen> createState() => _{{ entity.name }}FormScreenState();
+}
+
+class _{{ entity.name }}FormScreenState extends ConsumerState<{{ entity.name }}FormScreen> {
+  final _formKey = GlobalKey<FormState>();
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+  final _{{ field.name }}Controller = TextEditingController();
+
+{% endif %}
+{% endfor %}
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.entity != null) {
+      // 填充现有数据
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      _{{ field.name }}Controller.text = widget.entity!.{{ field.name }}{% if field.type == "Email" %}{% elif field.type == "Vec<String>" or field.type == "List<String>" %}.join(', '){% else %}.toString(){% endif %};
+
+{% endif %}
+{% endfor %}
+    }
+  }
+
+  @override
+  void dispose() {
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+    _{{ field.name }}Controller.dispose();
+
+{% endif %}
+{% endfor %}
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      if (widget.entity == null) {
+        // 创建
+        final createDto = Create{{ entity.name }}Dto(
+{% if features.multi_tenant %}
+          tenantId: widget.tenantId,
+{% endif %}
+{% for field_name in block.dto_fields.create | default(value=[]) %}
+{% set field = null %}
+{% for f in entity.fields %}
+{% if f.name == field_name %}
+{% set field = f %}
+{% break %}
+{% endif %}
+{% endfor %}
+{% if field and field.name != "tenant_id" and field.name != "password" %}
+          {{ field.name }}: _{{ field.name }}Controller.text,
+{% elif field_name == "password" %}
+          password: _passwordController.text,
+{% endif %}
+{% endfor %}
+        );
+
+        await ref.read(create{{ entity.name }}Provider(createDto).future);
+      } else {
+        // 更新
+        final updateDto = Update{{ entity.name }}Dto(
+{% for field_name in block.dto_fields.update | default(value=[]) %}
+{% set field = null %}
+{% for f in entity.fields %}
+{% if f.name == field_name %}
+{% set field = f %}
+{% break %}
+{% endif %}
+{% endfor %}
+{% if field and field.primary_key %}
+          {{ field.name }}: widget.entity!.id,
+{% elif field and field.name != "tenant_id" and field.name != "password" %}
+          {{ field.name }}: _{{ field.name }}Controller.text.isEmpty ? null : _{{ field.name }}Controller.text,
+{% elif field_name == "password" %}
+          password: _passwordController.text.isEmpty ? null : _passwordController.text,
+{% endif %}
+{% endfor %}
+        );
+
+        await ref.read(update{{ entity.name }}Provider(updateDto).future);
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.entity == null ? '创建成功' : '更新成功'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('操作失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.entity == null ? '创建{{ entity.name }}' : '更新{{ entity.name }}'),
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
+          children: [
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+            {# 使用派生的 flutter_widget_type 和 flutter_input_type #}
+            {% if field.flutter_widget_type is defined and field.flutter_widget_type == "DropdownButtonFormField" -%}
+            {# TODO: 下拉选择字段，需要配置选项列表 #}
+            DropdownButtonFormField<String>(
+              value: _{{ field.name }}Controller.text.isEmpty ? null : _{{ field.name }}Controller.text,
+              decoration: InputDecoration(
+                labelText: '{{ field.description }}',
+                border: const OutlineInputBorder(),
+              ),
+              items: [], // TODO: 配置选项
+              onChanged: (value) => _{{ field.name }}Controller.text = value ?? '',
+              validator: {{ field.flutter_validator }},
+            ),
+            {%- elif field.flutter_widget_type is defined and field.flutter_widget_type == "SwitchListTile" -%}
+            {# 布尔开关字段 #}
+            SwitchListTile(
+              title: Text('{{ field.description }}'),
+              value: _{{ field.name }}Controller.text == 'true',
+              onChanged: (value) => setState(() => _{{ field.name }}Controller.text = value.toString()),
+            ),
+            {%- else -%}
+            {# 默认文本输入字段 #}
+            TextFormField(
+              controller: _{{ field.name }}Controller,
+              decoration: InputDecoration(
+                labelText: '{{ field.description }}',
+                border: const OutlineInputBorder(),
+              ),
+              {% if field.flutter_input_type is defined %}keyboardType: {{ field.flutter_input_type }},{% endif %}
+              {% if field.flutter_readonly is defined and field.flutter_readonly %}readOnly: true,{% endif %}
+              {% if field.name == "password" or field.type == "Password" %}obscureText: true,{% endif %}
+              {% if field.flutter_validator is defined %}validator: {{ field.flutter_validator }},{% endif %}
+            ),
+            {%- endif %}
+            const SizedBox(height: 16.0),
+
+{% endif %}
+{% endfor %}
+            ElevatedButton(
+              onPressed: _isLoading ? null : _submit,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(widget.entity == null ? '创建' : '更新'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,93 @@
+global:
+  default_template_dir: templates
+  generated:
+    enabled: true
+    path: generated
+  codebase:
+    rust_path: core_rust
+    flutter_path: core_flutter
+  git:
+    auto_commit: true
+    commit_prefix: 'chore: [tiny tera]'
+  backup:
+    enabled: true
+    path: backups
+    retention_days: 30
+  block_preservation:
+    enabled: true
+    marker_format: <<<
+    merge_strategy: preserve_all
+task_groups:
+  backend:
+    description: 仅后端任务
+    tasks:
+    - um/core_rust
+    - um/protos
+    - um/migrations
+  frontend:
+    description: 仅前端任务
+    tasks:
+    - um/core_flutter
+  all:
+    description: 所有任务
+    tasks:
+    - um/core_rust
+    - um/core_flutter
+    - um/protos
+    - um/migrations
+  core:
+    description: 核心任务（domain + infrastructure）
+    tasks:
+    - um/core_rust
+  proto:
+    description: 仅 Proto 任务
+    tasks:
+    - um/protos
+  migrations:
+    description: 仅 Migrations 任务
+    tasks:
+    - um/migrations
+  product:
+    description: PRODUCT 模块所有任务
+    tasks:
+    - product/core_rust
+    - product/core_flutter
+    - product/protos
+    - product/migrations
+  erp:
+    description: "ERP 全模块任务（按依赖序: base → sale → purchase → inventory → account）"
+    tasks:
+    - erp/erp_base
+  erp_backend:
+    description: ERP 仅后端
+    tasks:
+    - erp/erp_base
+  erp_frontend:
+    description: ERP 仅前端
+    tasks:
+    - erp/erp_base
+  workspace_task:
+    description: Workspace task 标准模块任务
+    tasks:
+    - workspace/task/core_rust
+    - workspace/task/core_flutter
+    - workspace/task/protos
+    - workspace/task/migrations
+  workspace_memo:
+    description: Workspace memo 标准模块任务
+    tasks:
+    - workspace/memo/core_rust
+    - workspace/memo/core_flutter
+    - workspace/memo/protos
+    - workspace/memo/migrations
+execution:
+  parallel: false
+  on_failure:
+    continue: false
+    cleanup: true
+  interactive:
+    enabled: true
+    show_diff: true
+  output:
+    verbose: true
+    show_progress: true

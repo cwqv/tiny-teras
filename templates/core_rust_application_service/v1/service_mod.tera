@@ -1,0 +1,3 @@
+//! {{ entity.name }}应用服务
+
+pub mod {{ entity.name | snake_case }}_service;

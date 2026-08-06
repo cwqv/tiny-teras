@@ -1,0 +1,5 @@
+flutter panel shell
+module: {{ module_title }}
+id: {{ module_id }}
+icon: {{ module_icon }}
+task: {{ task_name }}

@@ -1,0 +1,42 @@
+import 'package:{{ entity.name | snake_case }}/domain/entities/{{ entity.name | snake_case }}.dart';
+
+/// Result of {{ result_description }}
+class {{ result_name }}Result {
+{%- if result_type == "entity" %}
+  final {{ entity.name }} {{ entity.name | snake_case }};
+
+  const {{ result_name }}Result(this.{{ entity.name | snake_case }});
+
+  @override
+  String toString() {
+    {% raw %}return '{{ result_name }}Result{{{ entity.name | snake_case }}: ${ {% endraw %}{{ entity.name | snake_case }}.id{% raw %} }}';{% endraw %}
+  }
+{%- elif result_type == "list" %}
+  final List<{{ entity.name }}> {{ entity.name | snake_case }}s;
+
+  const {{ result_name }}Result(this.{{ entity.name | snake_case }}s);
+
+  @override
+  String toString() {
+    {% raw %}return '{{ result_name }}Result{count: ${ {% endraw %}{{ entity.name | snake_case }}s.length{% raw %} }}';{% endraw %}
+  }
+{%- elif result_type == "void" %}
+  const {{ result_name }}Result();
+
+  @override
+  String toString() {
+    return '{{ result_name }}Result{}';
+  }
+{%- else %}
+  // TODO: 根据 result_type 实现相应的结果类型
+  final dynamic data;
+
+  const {{ result_name }}Result(this.data);
+
+  @override
+  String toString() {
+    return '{{ result_name }}Result{data: $data}';
+  }
+{%- endif %}
+}
+

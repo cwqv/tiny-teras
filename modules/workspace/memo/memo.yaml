@@ -1,0 +1,61 @@
+project: workspace/memo
+version: v1
+description: "Workspace memo standard module"
+
+workspace_module:
+  id: workspace/memo
+  title: Workspace Memo
+  icon: notebook-text
+  capabilities:
+    - list
+    - detail
+    - create
+    - update
+    - delete
+  mount:
+    location: sidebar
+    entry: primary
+
+entities:
+  - name: Memo
+    table_name: memos
+    schema: workspace
+    description: "Workspace memo entity"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        primary_key: true
+        description: "Memo ID"
+
+      - name: title
+        type: String
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "Memo title"
+
+      - name: body
+        type: Text
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "Memo body"
+
+      - name: tags
+        type: Json
+        rust_type: "Vec<String>"
+        flutter_type: "List<String>"
+        nullable: false
+        description: "Memo tags"
+
+      - name: updated_at
+        type: DateTime
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        description: "Last updated timestamp"
+
+tasks: []

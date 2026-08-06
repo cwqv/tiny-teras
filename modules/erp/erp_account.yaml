@@ -1,0 +1,916 @@
+# ERP Account 模块 Tera 项目配置
+# 版本: v1
+# 描述: 会计模块 (AccountMove, AccountMoveLine, AccountJournal, AccountTax)
+#
+# 对应 Rust domain: core_rust/crates/libs/erp/erp_account/src/domain/entities/
+
+module:
+  name: erp_account
+  schema: account
+  display_name: "Account"
+  description: "ERP 会计模块 — 凭证/发票、分录行、日记账、税率"
+
+entities:
+  # ─── AccountMove (会计凭证/发票 聚合根) ──────────────────────────────────
+  - name: AccountMove
+    table: account.moves
+    aggregate_root: true
+    pattern: header-line
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - GetPaged
+      - Create
+      - Update
+      - Delete
+      - Post
+      - Cancel
+      - ResetToDraft
+
+    domain_events:
+      - InvoicePosted
+      - InvoiceCancelled
+
+    computed_fields:
+      - name: amount_untaxed
+        description: "不含税合计"
+        depends_on: ["lines.price_subtotal"]
+      - name: amount_tax
+        description: "税额"
+        depends_on: ["lines"]
+      - name: amount_total
+        description: "含税合计"
+        depends_on: ["amount_untaxed", "amount_tax"]
+      - name: amount_residual
+        description: "未付余额"
+        depends_on: ["amount_total", "payments"]
+
+    constraints:
+      - name: double_entry_balance
+        description: "复式记账约束: Σ debit = Σ credit"
+        rule: "sum(lines.debit) == sum(lines.credit)"
+
+    indexed_fields:
+      - name
+      - partner_id
+      - state
+      - move_type
+      - date
+      - journal_id
+      - tenant_id
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        primary_key: true
+        description: "AccountMove ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String?"
+        nullable: true
+        description: "凭证编号"
+        searchable: true
+        search_operator: "ILIKE"
+
+      - name: ref
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String?"
+        nullable: true
+        description: "参考号"
+
+      - name: date
+        type: Date
+        rust_type: "chrono::NaiveDate"
+        flutter_type: "DateTime"
+        nullable: false
+        description: "凭证日期"
+
+      - name: state
+        type: String
+        rust_type: "AccountMoveState"
+        flutter_type: "String"
+        nullable: false
+        default: "draft"
+        description: "状态 (draft/posted/cancel)"
+
+      - name: move_type
+        type: String
+        rust_type: "MoveType"
+        flutter_type: "String"
+        nullable: false
+        default: "entry"
+        description: "凭证类型 (entry/out_invoice/in_invoice/out_refund/in_refund)"
+
+      - name: journal_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        description: "日记账"
+        relation: account.journals
+
+      - name: partner_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        flutter_type: "String?"
+        nullable: true
+        description: "合作伙伴"
+        relation: base.partners
+
+      - name: currency_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        flutter_type: "String"
+        nullable: false
+        description: "币种"
+        relation: base.currencies
+
+      # ── 发票日期 ──
+      - name: invoice_date
+        type: Date
+        rust_type: "Option<chrono::NaiveDate>"
+        flutter_type: "DateTime?"
+        nullable: true
+        description: "发票日期"
+
+      - name: invoice_date_due
+        type: Date
+        rust_type: "Option<chrono::NaiveDate>"
+        flutter_type: "DateTime?"
+        nullable: true
+        description: "到期日"
+
+      # ── 金额 (computed) ──
+      - name: amount_untaxed
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        flutter_type: "double"
+        nullable: false
+        default: "0"
+        description: "不含税合计"
+
+      - name: amount_tax
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        flutter_type: "double"
+        nullable: false
+        default: "0"
+        description: "税额"
+
+      - name: amount_total
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        flutter_type: "double"
+        nullable: false
+        default: "0"
+        description: "含税合计"
+
+      - name: amount_residual
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        flutter_type: "double"
+        nullable: false
+        default: "0"
+        description: "未付余额"
+
+      - name: amount_total_signed
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        flutter_type: "double"
+        nullable: false
+        default: "0"
+        description: "含税合计 (签名值)"
+
+      - name: payment_state
+        type: String
+        rust_type: "Option<PaymentState>"
+        flutter_type: "String?"
+        nullable: true
+        description: "付款状态"
+
+      # ── 关联 ──
+      - name: invoice_payment_term_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        flutter_type: "String?"
+        nullable: true
+        description: "付款条件"
+
+      - name: fiscal_position_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        flutter_type: "String?"
+        nullable: true
+        description: "财务位置"
+
+      - name: invoice_user_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        flutter_type: "String?"
+        nullable: true
+        description: "负责人"
+
+      - name: invoice_origin
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String?"
+        nullable: true
+        description: "来源单据"
+
+      # ── 审计追踪 ──
+      - name: posted_before
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "曾经过账"
+
+      - name: is_move_sent
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否已发送"
+
+      - name: narration
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String?"
+        nullable: true
+        description: "备注"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+      # ... additional fields (auto_post, inalterable_hash, reversal, etc.), see migration
+
+  # ─── AccountMoveLine (会计分录行) ──────────────────────────────────
+  - name: AccountMoveLine
+    table: account.move_lines
+    aggregate_root: false
+    parent_entity: AccountMove
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "AccountMoveLine ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: move_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "所属凭证"
+        relation: account.moves
+
+      - name: account_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "科目"
+
+      - name: name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "摘要"
+
+      # ── 核心复式记账 ──
+      - name: debit
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "借方"
+
+      - name: credit
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "贷方"
+
+      - name: balance
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "余额 = debit - credit"
+
+      - name: amount_currency
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "外币金额"
+
+      - name: currency_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "币种"
+        relation: base.currencies
+
+      # ── 合作伙伴 ──
+      - name: partner_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "合作伙伴"
+
+      # ── 调节 ──
+      - name: reconciled
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "已调节"
+
+      - name: full_reconcile_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "完全调节记录"
+
+      - name: amount_residual
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "未调节余额"
+
+      # ── 产品 (发票行) ──
+      - name: product_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "产品"
+
+      - name: quantity
+        type: f64
+        rust_type: "Option<f64>"
+        nullable: true
+        description: "数量"
+
+      - name: price_unit
+        type: f64
+        rust_type: "Option<f64>"
+        nullable: true
+        description: "单价"
+
+      - name: price_subtotal
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "不含税小计"
+
+      - name: price_total
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "含税合计"
+
+      - name: discount
+        type: f64
+        rust_type: "Option<f64>"
+        nullable: true
+        description: "折扣"
+
+      - name: display_type
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "显示类型"
+
+      - name: date_maturity
+        type: Date
+        rust_type: "Option<chrono::NaiveDate>"
+        nullable: true
+        description: "到期日"
+
+      - name: sequence
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+        description: "排序"
+
+      # ── 税务 ──
+      - name: tax_line_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "税率行"
+
+      - name: tax_base_amount
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "税基金额"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+      # ... additional fields (analytic, storno, etc.), see migration
+
+  # ─── AccountJournal (会计日记账) ──────────────────────────────────
+  - name: AccountJournal
+    table: account.journals
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: false
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "AccountJournal ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "日记账名称"
+
+      - name: code
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "日记账代码 (max 5 chars)"
+
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: journal_type
+        type: String
+        rust_type: "JournalType"
+        nullable: false
+        default: "general"
+        description: "日记账类型 (sale/purchase/cash/bank/general)"
+
+      - name: default_account_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "默认科目"
+
+      - name: suspense_account_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "暂挂科目"
+
+      - name: currency_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "币种"
+        relation: base.currencies
+
+      - name: bank_account_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "银行账户"
+
+      - name: sequence
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+        description: "排序"
+
+      - name: invoice_reference_type
+        type: String
+        rust_type: "String"
+        nullable: false
+        default: "none"
+        description: "发票参考类型"
+
+      - name: invoice_reference_model
+        type: String
+        rust_type: "String"
+        nullable: false
+        default: "odoo"
+        description: "发票参考模型"
+
+      # ── 审计 ──
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── AccountTax (税率) ──────────────────────────────────
+  - name: AccountTax
+    table: account.taxes
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: false
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "AccountTax ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "税率名称"
+
+      - name: type_tax_use
+        type: String
+        rust_type: "TaxUseType"
+        nullable: false
+        default: "sale"
+        description: "税率用途 (sale/purchase/none)"
+
+      - name: amount_type
+        type: String
+        rust_type: "TaxAmountType"
+        nullable: false
+        default: "percent"
+        description: "计算方式 (percent/fixed/group/division)"
+
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: sequence
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "排序"
+
+      - name: amount
+        type: f64
+        rust_type: "f64"
+        nullable: false
+        description: "税率值 (百分比模式下为百分比数, 固定模式下为金额)"
+
+      - name: description
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "描述"
+
+      - name: price_include_override
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "含税价格设置"
+
+      - name: include_base_amount
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否包含在税基中"
+
+      - name: is_base_affected
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否影响税基"
+
+      - name: tax_group_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "税率组"
+
+      - name: country_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "国家"
+        relation: base.countries
+
+      # ── 审计 ──
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+enums:
+  - name: AccountMoveState
+    description: "会计凭证状态"
+    state_machine: true
+    default: Draft
+    values:
+      - name: Draft
+        display: "草稿"
+        description: "可自由编辑"
+      - name: Posted
+        display: "已过账"
+        description: "不可修改（除非取消后重新草稿）"
+      - name: Cancel
+        display: "已取消"
+        description: "可重新打开回草稿"
+    transitions:
+      - from: Draft
+        to: [Posted, Cancel]
+      - from: Posted
+        to: [Cancel]
+      - from: Cancel
+        to: [Draft]
+
+  - name: MoveType
+    description: "凭证类型"
+    state_machine: false
+    values:
+      - name: Entry
+        display: "日记账分录"
+        db_value: "entry"
+      - name: OutInvoice
+        display: "客户发票"
+        db_value: "out_invoice"
+      - name: InInvoice
+        display: "供应商账单"
+        db_value: "in_invoice"
+      - name: OutRefund
+        display: "客户贷项通知"
+        db_value: "out_refund"
+      - name: InRefund
+        display: "供应商贷项通知"
+        db_value: "in_refund"
+
+  - name: JournalType
+    description: "日记账类型"
+    state_machine: false
+    values:
+      - name: Sale
+        display: "销售"
+      - name: Purchase
+        display: "采购"
+      - name: Cash
+        display: "现金"
+      - name: Bank
+        display: "银行"
+      - name: General
+        display: "综合"
+
+  - name: PaymentState
+    description: "付款状态"
+    state_machine: false
+    values:
+      - name: NotPaid
+        display: "未付款"
+        db_value: "not_paid"
+      - name: InPayment
+        display: "付款中"
+        db_value: "in_payment"
+      - name: Paid
+        display: "已付款"
+        db_value: "paid"
+      - name: Partial
+        display: "部分付款"
+        db_value: "partial"
+      - name: Reversed
+        display: "已冲销"
+        db_value: "reversed"
+
+  - name: TaxAmountType
+    description: "税率计算方式"
+    state_machine: false
+    values:
+      - name: Percent
+        display: "百分比"
+      - name: Fixed
+        display: "固定金额"
+      - name: Group
+        display: "分组"
+      - name: Division
+        display: "除法 (含税→不含税)"
+
+  - name: TaxUseType
+    description: "税率用途"
+    state_machine: false
+    values:
+      - name: Sale
+        display: "销售"
+      - name: Purchase
+        display: "采购"
+      - name: None
+        display: "无"
+
+task_groups:
+  backend:
+    - domain_entity
+    - domain_repository
+    - infrastructure_repository
+    - application_command
+    - application_query
+    - application_dto
+    - application_service
+  proto:
+    - proto_service
+  frontend:
+    - flutter_list_page
+    - flutter_form_page

@@ -1,0 +1,201 @@
+import 'package:json_annotation/json_annotation.dart';
+
+part '{{ entity.name | snake_case }}_dto.g.dart';
+
+{%- if entity.dto_fields.create is defined and entity.dto_fields.create | length > 0 %}
+/// 创建{{ entity.name }}的DTO
+@JsonSerializable()
+class Create{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.create %}
+  /// {{ field.description | default(value=field.name) }}
+  final {{ field.flutter_type }}{% if field.nullable %}?{% endif %} {{ field.name }};
+
+{%- endfor %}
+  Create{{ entity.name }}Dto({
+{%- for field in entity.dto_fields.create %}
+    {%- if field.nullable %}this.{% else %}required this.{% endif %}{{ field.name }},
+{%- endfor %}
+  });
+
+  factory Create{{ entity.name }}Dto.fromJson(Map<String, dynamic> json) =>
+      _$Create{{ entity.name }}DtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$Create{{ entity.name }}DtoToJson(this);
+}
+{%- endif %}
+
+{%- if entity.dto_fields.created is defined or entity.dto_fields.create is defined %}
+/// 创建{{ entity.name }}后的响应DTO
+@JsonSerializable()
+class Created{{ entity.name }}Dto {
+{%- for field in entity.fields %}
+  {%- if field.primary_key %}
+  /// {{ field.description }}
+  final String {{ field.name }};
+
+  {%- endif %}
+{%- endfor %}
+{%- if features.multi_tenant %}
+  /// 租户ID
+  final String tenantId;
+
+{%- endif %}
+  Created{{ entity.name }}Dto({
+{%- for field in entity.fields %}
+  {%- if field.primary_key %}
+    required this.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+{%- if features.multi_tenant %}
+    required this.tenantId,
+{%- endif %}
+  });
+
+  factory Created{{ entity.name }}Dto.fromJson(Map<String, dynamic> json) =>
+      _$Created{{ entity.name }}DtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$Created{{ entity.name }}DtoToJson(this);
+}
+{%- endif %}
+
+{%- if entity.dto_fields.get is defined and entity.dto_fields.get | length > 0 %}
+/// 获取{{ entity.name }}的DTO
+@JsonSerializable()
+class Get{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.get %}
+  /// {{ field.description | default(value=field.name) }}
+  final {{ field.flutter_type }} {{ field.name }};
+
+{%- endfor %}
+  Get{{ entity.name }}Dto({
+{%- for field in entity.dto_fields.get %}
+    required this.{{ field.name }},
+{%- endfor %}
+  });
+
+  factory Get{{ entity.name }}Dto.fromJson(Map<String, dynamic> json) =>
+      _$Get{{ entity.name }}DtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$Get{{ entity.name }}DtoToJson(this);
+}
+{%- endif %}
+
+{%- if entity.dto_fields.list is defined and entity.dto_fields.list | length > 0 %}
+/// 列出{{ entity.name }}的DTO
+@JsonSerializable()
+class List{{ entity.name }}sDto {
+{%- for field in entity.dto_fields.list %}
+  /// {{ field.description | default(value=field.name) }}（可选）
+  final {{ field.flutter_type }}? {{ field.name }};
+
+{%- endfor %}
+  List{{ entity.name }}sDto({
+{%- for field in entity.dto_fields.list %}
+    this.{{ field.name }},
+{%- endfor %}
+  });
+
+  factory List{{ entity.name }}sDto.fromJson(Map<String, dynamic> json) =>
+      _$List{{ entity.name }}sDtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$List{{ entity.name }}sDtoToJson(this);
+}
+{%- endif %}
+
+{%- if entity.dto_fields.update is defined and entity.dto_fields.update | length > 0 %}
+/// 更新{{ entity.name }}的DTO
+@JsonSerializable()
+class Update{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.update %}
+  {%- if field.name == "id" %}
+  /// {{ entity.name }} ID
+  final String {{ entity.name | lower }}Id;
+
+  {%- else %}
+  /// {{ field.description | default(value=field.name) }}（可选）
+  final {{ field.flutter_type }}? {{ field.name }};
+
+  {%- endif %}
+{%- endfor %}
+  Update{{ entity.name }}Dto({
+{%- for field in entity.dto_fields.update %}
+  {%- if field.name == "id" %}
+    required this.{{ entity.name | lower }}Id,
+  {%- else %}
+    this.{{ field.name }},
+  {%- endif %}
+{%- endfor %}
+  });
+
+  factory Update{{ entity.name }}Dto.fromJson(Map<String, dynamic> json) =>
+      _$Update{{ entity.name }}DtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$Update{{ entity.name }}DtoToJson(this);
+}
+{%- endif %}
+
+{%- if entity.dto_fields.delete is defined and entity.dto_fields.delete | length > 0 %}
+/// 删除{{ entity.name }}的DTO
+@JsonSerializable()
+class Delete{{ entity.name }}Dto {
+{%- for field in entity.dto_fields.delete %}
+  {%- if field.name == "id" %}
+  /// {{ entity.name }} ID
+  final String {{ entity.name | lower }}Id;
+
+  {%- else %}
+  /// {{ field.description | default(value=field.name) }}
+  final {{ field.flutter_type }} {{ field.name }};
+
+  {%- endif %}
+{%- endfor %}
+  Delete{{ entity.name }}Dto({
+{%- for field in entity.dto_fields.delete %}
+  {%- if field.name == "id" %}
+    required this.{{ entity.name | lower }}Id,
+  {%- else %}
+    required this.{{ field.name }},
+  {%- endif %}
+{%- endfor %}
+  });
+
+  factory Delete{{ entity.name }}Dto.fromJson(Map<String, dynamic> json) =>
+      _$Delete{{ entity.name }}DtoFromJson(json);
+
+  Map<String, dynamic> toJson() => _$Delete{{ entity.name }}DtoToJson(this);
+}
+{%- endif %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

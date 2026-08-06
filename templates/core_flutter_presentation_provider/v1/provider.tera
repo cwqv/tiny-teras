@@ -1,0 +1,109 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_application/shared_application.dart';
+
+import '../../application/use_cases/{{ entity.name | snake_case }}_use_cases.dart';
+import '../../application/dto/user_dto.dart';
+import '../../domain/entities/{{ entity.name | snake_case }}.dart';
+
+/// {{ entity.name }}仓储Provider
+final {{ entity.name | snake_case }}RepositoryProvider = Provider<{{ entity.name }}Repository>((ref) {
+  throw UnimplementedError('{{ entity.name }}Repository must be overridden');
+});
+
+{% if entity.service_methods is defined and entity.service_methods | length > 0 -%}
+{# 使用派生的 service_methods 循环生成 UseCase Providers #}
+{%- for method in entity.service_methods %}
+/// {{ method.description }}用例Provider
+final {{ method.provider_name }} = Provider<{{ method.use_case_class }}>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return {{ method.use_case_class }}(repository);
+});
+
+{% endfor -%}
+{%- else -%}
+{# 默认 CRUD 方法（向后兼容） #}
+/// 创建{{ entity.name }}用例Provider
+final create{{ entity.name }}UseCaseProvider = Provider<Create{{ entity.name }}UseCase>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return Create{{ entity.name }}UseCase(repository);
+});
+
+/// 获取{{ entity.name }}用例Provider
+final get{{ entity.name }}UseCaseProvider = Provider<Get{{ entity.name }}UseCase>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return Get{{ entity.name }}UseCase(repository);
+});
+
+/// 列出{{ entity.name }}用例Provider
+final list{{ entity.name }}sUseCaseProvider = Provider<List{{ entity.name }}sUseCase>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return List{{ entity.name }}sUseCase(repository);
+});
+
+/// 更新{{ entity.name }}用例Provider
+final update{{ entity.name }}UseCaseProvider = Provider<Update{{ entity.name }}UseCase>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return Update{{ entity.name }}UseCase(repository);
+});
+
+/// 删除{{ entity.name }}用例Provider
+final delete{{ entity.name }}UseCaseProvider = Provider<Delete{{ entity.name }}UseCase>((ref) {
+  final repository = ref.watch({{ entity.name | snake_case }}RepositoryProvider);
+  return Delete{{ entity.name }}UseCase(repository);
+});
+{% endif %}
+
+/// {{ entity.name }}列表状态Provider
+final {{ entity.name | snake_case }}ListProvider = FutureProvider.family<List<{{ entity.name }}>, List{{ entity.name }}sDto>((ref, dto) async {
+  final useCase = ref.watch(list{{ entity.name }}sUseCaseProvider);
+  final result = await useCase.execute(dto);
+  
+  return result.fold(
+    (entities) => entities,
+    (failure) => throw failure,
+  );
+});
+
+/// {{ entity.name }}详情状态Provider
+final {{ entity.name | snake_case }}DetailProvider = FutureProvider.family<{{ entity.name }}, Get{{ entity.name }}Dto>((ref, dto) async {
+  final useCase = ref.watch(get{{ entity.name }}UseCaseProvider);
+  final result = await useCase.execute(dto);
+  
+  return result.fold(
+    (entity) => entity,
+    (failure) => throw failure,
+  );
+});
+
+/// 创建{{ entity.name }}状态Provider
+final create{{ entity.name }}Provider = FutureProvider.family<Created{{ entity.name }}Dto, Create{{ entity.name }}Dto>((ref, dto) async {
+  final useCase = ref.watch(create{{ entity.name }}UseCaseProvider);
+  final result = await useCase.execute(dto);
+  
+  return result.fold(
+    (created) => created,
+    (failure) => throw failure,
+  );
+});
+
+/// 更新{{ entity.name }}状态Provider
+final update{{ entity.name }}Provider = FutureProvider.family<{{ entity.name }}, Update{{ entity.name }}Dto>((ref, dto) async {
+  final useCase = ref.watch(update{{ entity.name }}UseCaseProvider);
+  final result = await useCase.execute(dto);
+  
+  return result.fold(
+    (entity) => entity,
+    (failure) => throw failure,
+  );
+});
+
+/// 删除{{ entity.name }}状态Provider
+final delete{{ entity.name }}Provider = FutureProvider.family<void, Delete{{ entity.name }}Dto>((ref, dto) async {
+  final useCase = ref.watch(delete{{ entity.name }}UseCaseProvider);
+  final result = await useCase.execute(dto);
+  
+  return result.fold(
+    (_) => null,
+    (failure) => throw failure,
+  );
+});

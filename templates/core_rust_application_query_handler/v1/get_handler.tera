@@ -1,0 +1,34 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use std::sync::Arc;
+
+use shared_application::error::ApplicationResult;
+
+use crate::application::queries::get_{{ entity_snake }}_query::Get{{ entity_pascal }}Query;
+use crate::domain::entities::{{ entity_snake }}::{{ entity_pascal }};
+use crate::domain::repositories::{{ entity_snake }}_repository::{{ entity_pascal }}Repository;
+
+/// Query handler for getting {{ entity.description | default(value=entity.name) }}
+pub struct Get{{ entity_pascal }}QueryHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    repo: Arc<R>,
+}
+
+impl<R> Get{{ entity_pascal }}QueryHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    pub fn new(repo: Arc<R>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, query: Get{{ entity_pascal }}Query) -> ApplicationResult<{{ entity_pascal }}> {
+        self.repo.find_by_id(query.{{ entity_snake }}_id).await
+    }
+}
+
+// <<< block:custom_get_handler_methods
+// 自定义查询处理器方法（在此添加自定义的处理逻辑）
+// >>> end:custom_get_handler_methods

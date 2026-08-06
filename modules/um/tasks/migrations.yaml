@@ -1,0 +1,131 @@
+# Migration 相关任务配置
+tasks:
+  # CREATE TABLE Migration
+  - name: um_migration_create_table
+    description: "用户管理模块 CREATE TABLE Migration 生成"
+    template: "core_sql_migration/v1"
+    template_file: "migration_create_table.tera"
+    target: "migrations/{{ migration_timestamp }}_create_sys_{{ entity.table_name }}.sql"
+    path: "migrations"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+    
+    # Migration 时间戳（自动生成，格式: YYYYMMDDHHMMSS）
+    # migration_timestamp: "20251217000112"
+  
+  # ALTER TABLE Migration（可选）
+  - name: um_migration_alter_table
+    description: "用户管理模块 ALTER TABLE Migration 生成"
+    template: "core_sql_migration/v1"
+    template_file: "migration_alter_table.tera"
+    target: "migrations/{{ migration_timestamp }}_alter_sys_{{ entity.table_name }}.sql"
+    path: "migrations"
+    
+    # 可选：migration 描述
+    migration_description: "Add new columns or modify existing ones"
+    
+    # 表修改配置
+    alterations:
+      add_columns:
+        # 示例：添加新列
+        # - name: new_field
+        #   type: String
+        #   sql_type: TEXT
+        #   nullable: true
+        #   default: null
+        #   description: "New field description"
+      
+      drop_columns:
+        # 示例：删除列
+        # - old_field_name
+      
+      rename_columns:
+        # 示例：重命名列
+        # - old_name: old_field
+        #   new_name: new_field
+      
+      modify_columns:
+        # 示例：修改列类型
+        # - name: field_name
+        #   new_sql_type: VARCHAR(255)
+        #   using: "field_name::VARCHAR(255)"
+        #   set_not_null: true
+      
+      add_constraints:
+        # 示例：添加约束
+        # - name: chk_field_positive
+        #   expression: "field_name > 0"
+      
+      drop_constraints:
+        # 示例：删除约束
+        # - constraint_name
+      
+      add_indexes:
+        # 示例：添加索引
+        # - name: idx_field_name
+        #   columns:
+        #     - field_name
+      
+      drop_indexes:
+        # 示例：删除索引
+        # - idx_old_field
+  
+  # DROP TABLE Migration（可选，谨慎使用）
+  - name: um_migration_drop_table
+    description: "用户管理模块 DROP TABLE Migration 生成（WARNING: 破坏性操作）"
+    template: "core_sql_migration/v1"
+    template_file: "migration_drop_table.tera"
+    target: "migrations/{{ migration_timestamp }}_drop_sys_{{ entity.table_name }}.sql"
+    path: "migrations"
+    
+    migration_description: "Drop users table (DESTRUCTIVE)"
+    
+    # 可选：先删除依赖的视图/函数
+    drop_views: []
+    drop_functions: []
+  
+  # Constraints Migration（可选）
+  - name: um_migration_constraints
+    description: "用户管理模块约束 Migration 生成"
+    template: "core_sql_migration/v1"
+    template_file: "migration_constraints.tera"
+    target: "migrations/{{ migration_timestamp }}_constraints_sys_{{ entity.table_name }}.sql"
+    path: "migrations"
+    
+    migration_description: "Add foreign keys, unique constraints, and indexes"
+    
+    # 约束配置
+    constraints:
+      foreign_keys:
+        # 示例：外键约束
+        # - column: tenant_id
+        #   target_schema: sys
+        #   target_table: tenants
+        #   target_column: id
+        #   on_delete: CASCADE
+        #   on_update: RESTRICT
+        #   name: fk_users_tenant
+      
+      unique_constraints:
+        # 示例：唯一约束
+        # - columns:
+        #     - email
+        #     - tenant_id
+        #   name: uc_users_email_tenant
+      
+      check_constraints:
+        # 示例：检查约束
+        # - name: chk_users_email_format
+        #   expression: "length(email) >= 3 AND length(email) <= 320"
+      
+      indexes:
+        # 示例：索引
+        # - columns:
+        #     - is_active
+        #     - created_at
+        #   name: idx_users_active_created
+        #   unique: false
+        #   using: btree
+        #   where: "is_active = TRUE"

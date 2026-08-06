@@ -1,0 +1,50 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use std::sync::Arc;
+
+use shared_application::error::ApplicationResult;
+
+use crate::application::queries::list_{{ entity_snake }}s_query::List{{ entity_pascal }}sQuery;
+use crate::domain::entities::{{ entity_snake }}::{{ entity_pascal }};
+use crate::domain::repositories::{{ entity_snake }}_repository::{{ entity_pascal }}Repository;
+
+/// Query handler for listing {{ entity.description | default(value=entity.name) }}s
+pub struct List{{ entity_pascal }}sQueryHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    repo: Arc<R>,
+}
+
+impl<R> List{{ entity_pascal }}sQueryHandler<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    pub fn new(repo: Arc<R>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, query: List{{ entity_pascal }}sQuery) -> ApplicationResult<Vec<{{ entity_pascal }}>> {
+        // 构建查询条件
+        let mut filters = Vec::new();
+        
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+        if let Some(tenant_id) = &query.tenant_id {
+            filters.push(("tenant_id", tenant_id.as_str()));
+        }
+
+{% endif %}
+        // 执行查询
+        let results = self.repo.find_all(
+            filters,
+            query.limit,
+            query.offset,
+        ).await?;
+
+        Ok(results)
+    }
+}
+
+// <<< block:custom_list_handler_methods
+// 自定义列表查询处理器方法（在此添加自定义的处理逻辑）
+// >>> end:custom_list_handler_methods

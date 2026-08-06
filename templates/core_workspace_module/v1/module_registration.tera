@@ -1,0 +1,5 @@
+module registration
+id: {{ module_id }}
+mount.location: {{ workspace_mount.location }}
+mount.entry: {{ workspace_mount.entry }}
+task: {{ task_name }}

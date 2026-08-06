@@ -1,0 +1,7 @@
+tasks:
+  - name: workspace_task_flutter_panel
+    description: "Generate a minimal workspace task Flutter panel shell"
+    template: "core_workspace_module/v1"
+    template_file: "flutter_panel.tera"
+    target: "docs/generated/workspace-task-flutter-panel.txt"
+    path: "workspace/task"

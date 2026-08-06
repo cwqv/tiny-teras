@@ -1,0 +1,260 @@
+{%- if method.name == "Create" %}
+use std::sync::Arc;
+
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+{% set has_password = false %}
+{% for field in entity.fields %}
+{% if field.name == "password" %}
+{% set has_password = true %}
+{% endif %}
+{% endfor %}
+{%- if has_password %}
+use shared_application::services::authentication_service::{
+    AuthenticationService, AuthenticationServiceTrait,
+};
+{%- endif %}
+
+use crate::application::commands::{{ method.name | lower }}_{{ entity.name | snake_case }}_command::{Create{{ entity.name }}Command, Create{{ entity.name }}Result};
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// Command handler for creating a {{ entity.name | snake_case }}
+pub struct Create{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+{%- if has_password %}
+    auth_service: Arc<AuthenticationService>,
+{%- endif %}
+}
+
+impl<R> Create{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>{% if has_password %}, auth_service: AuthenticationService{% endif %}) -> Self {
+        Self {
+            repo,
+{%- if has_password %}
+            auth_service: Arc::new(auth_service),
+{%- endif %}
+        }
+    }
+
+    pub async fn execute(&self, command: Create{{ entity.name }}Command) -> ApplicationResult<Create{{ entity.name }}Result> {
+{% set has_email = false %}
+{% for field in entity.fields %}
+{% if field.type == "Email" %}
+{% set has_email = true %}
+{% endif %}
+{% endfor %}
+{%- if has_email %}
+        // Validate email format (already validated in Email value object)
+{%- endif %}
+{%- if has_password %}
+        // Validate password strength
+        if command.password.len() < 8 {
+            return Err(ApplicationError::validation_single("密码长度至少8位"));
+        }
+
+        // Hash password
+        let password_hash = AuthenticationServiceTrait::hash_password(
+            self.auth_service.as_ref(),
+            &command.password,
+        )
+        .map_err(|e| ApplicationError::internal(format!("密码哈希失败: {}", e)))?;
+
+{%- endif %}
+        // Create {{ entity.name | snake_case }} ID
+        let {{ entity.name | snake_case }}_id = Uuid::new_v4();
+
+        // Create {{ entity.name | snake_case }} entity
+        let {{ entity.name | snake_case }} = {{ entity.name }} {
+            {{ entity.name | snake_case }}_id,
+{%- if features.multi_tenant %}
+            tenant_id: command.tenant_id.clone(),
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" %}
+{%- if field.name == "password" %}
+            password_hash,
+{%- elif field.type == "Email" %}
+            {{ field.name }}: command.{{ field.name }},
+{%- elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}
+            {{ field.name }}: command.{{ field.name }},
+{%- elif field.name == "is_active" %}
+            {{ field.name }}: true,
+{%- else %}
+            {{ field.name }}: command.{{ field.name }},
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+        };
+
+        // Save to database
+        self.repo.upsert({{ entity.name | snake_case }}).await?;
+
+        Ok(Create{{ entity.name }}Result::new({{ entity.name | snake_case }}_id{% if features.multi_tenant %}, command.tenant_id{% endif %}))
+    }
+}
+
+{%- elif method.name == "Update" %}
+use std::sync::Arc;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+{% set has_password = false %}
+{% for field in entity.fields %}
+{% if field.name == "password" %}
+{% set has_password = true %}
+{% endif %}
+{% endfor %}
+{%- if has_password %}
+use shared_application::services::authentication_service::{
+    AuthenticationService, AuthenticationServiceTrait,
+};
+{%- endif %}
+
+use crate::application::commands::{{ method.name | lower }}_{{ entity.name | snake_case }}_command::{Update{{ entity.name }}Command, Update{{ entity.name }}Result};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// Command handler for updating a {{ entity.name | snake_case }}
+pub struct Update{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+{%- if has_password %}
+    auth_service: Arc<AuthenticationService>,
+{%- endif %}
+}
+
+impl<R> Update{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>{% if has_password %}, auth_service: AuthenticationService{% endif %}) -> Self {
+        Self {
+            repo,
+{%- if has_password %}
+            auth_service: Arc::new(auth_service),
+{%- endif %}
+        }
+    }
+
+    pub async fn execute(&self, command: Update{{ entity.name }}Command) -> ApplicationResult<Update{{ entity.name }}Result> {
+        // Get existing {{ entity.name | snake_case }}
+        let mut {{ entity.name | snake_case }} = self.repo.find_by_id(command.{{ entity.name | snake_case }}_id).await?.ok_or_else(|| {
+            ApplicationError::not_found(format!("{{ entity.name }} not found: {}", command.{{ entity.name | snake_case }}_id))
+        })?;
+
+{%- if features.multi_tenant %}
+        // Verify tenant match
+        if {{ entity.name | snake_case }}.tenant_id != command.tenant_id {
+            return Err(ApplicationError::forbidden(
+                "{{ entity.name }} does not belong to this tenant",
+            ));
+        }
+
+{%- endif %}
+        // Update fields
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" %}
+{%- if field.type == "Email" %}
+        if let Some(new_{{ field.name }}) = command.{{ field.name }} {
+            {{ entity.name | snake_case }}.{{ field.name }} = new_{{ field.name }};
+        }
+{%- elif field.name == "password" %}
+        if let Some(new_password) = command.password {
+            // Validate password strength
+            if new_password.len() < 8 {
+                return Err(ApplicationError::validation_single("密码长度至少8位"));
+            }
+
+            // Hash new password
+            let password_hash = AuthenticationServiceTrait::hash_password(
+                self.auth_service.as_ref(),
+                &new_password,
+            )
+            .map_err(|e| ApplicationError::internal(format!("密码哈希失败: {}", e)))?;
+            {{ entity.name | snake_case }}.password_hash = password_hash;
+        }
+{%- elif field.type == "Vec<String>" or field.type == "Vec<&str>" %}
+        if let Some(new_{{ field.name }}) = command.{{ field.name }} {
+            {{ entity.name | snake_case }}.{{ field.name }} = new_{{ field.name }};
+        }
+{%- else %}
+        if let Some(new_{{ field.name }}) = command.{{ field.name }} {
+            {{ entity.name | snake_case }}.{{ field.name }} = new_{{ field.name }};
+        }
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+
+        // Save updates
+        self.repo.update({{ entity.name | snake_case }}).await?;
+
+        Ok(Update{{ entity.name }}Result::new(command.{{ entity.name | snake_case }}_id))
+    }
+}
+
+{%- elif method.name == "Delete" %}
+use std::sync::Arc;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+
+use crate::application::commands::{{ method.name | lower }}_{{ entity.name | snake_case }}_command::{Delete{{ entity.name }}Command, Delete{{ entity.name }}Result};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// Command handler for deleting a {{ entity.name | snake_case }}
+pub struct Delete{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+}
+
+impl<R> Delete{{ entity.name }}CommandHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, command: Delete{{ entity.name }}Command) -> ApplicationResult<Delete{{ entity.name }}Result> {
+{%- if features.multi_tenant %}
+        // Verify {{ entity.name | snake_case }} exists and belongs to tenant
+        let {{ entity.name | snake_case }} = self.repo.find_by_id(command.{{ entity.name | snake_case }}_id).await?.ok_or_else(|| {
+            ApplicationError::not_found(format!("{{ entity.name }} not found: {}", command.{{ entity.name | snake_case }}_id))
+        })?;
+
+        // Verify tenant match
+        if {{ entity.name | snake_case }}.tenant_id != command.tenant_id {
+            return Err(ApplicationError::forbidden(
+                "{{ entity.name }} does not belong to this tenant",
+            ));
+        }
+
+{%- else %}
+        // Verify {{ entity.name | snake_case }} exists
+        let _{{ entity.name | snake_case }} = self.repo.find_by_id(command.{{ entity.name | snake_case }}_id).await?.ok_or_else(|| {
+            ApplicationError::not_found(format!("{{ entity.name }} not found: {}", command.{{ entity.name | snake_case }}_id))
+        })?;
+
+{%- endif %}
+        // Execute delete
+{%- if features.soft_delete %}
+        self.repo.soft_delete(command.{{ entity.name | snake_case }}_id{% if features.multi_tenant %}, command.tenant_id{% endif %}).await?;
+{%- else %}
+        self.repo.delete(command.{{ entity.name | snake_case }}_id{% if features.multi_tenant %}, command.tenant_id{% endif %}).await?;
+{%- endif %}
+
+        Ok(Delete{{ entity.name }}Result::new(true))
+    }
+}
+
+{%- endif %}
+

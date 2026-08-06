@@ -1,0 +1,151 @@
+import 'package:shared_domain/shared_domain.dart';
+import 'package:{{ entity.name | snake_case }}/domain/entities/{{ entity.name | snake_case }}.dart';
+{%- for field in entity.fields %}
+{%- if field.type == "Email" or field.name == "email" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/email.dart';
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/{{ field.name | snake_case }}.dart';
+{%- endif %}
+{%- endfor %}
+
+/// Mapper to convert between domain models and external models (e.g., gRPC, JSON)
+class {{ entity.name }}Mapper {
+  /// Convert domain {{ entity.name }} to simple map
+  Map<String, dynamic> toMap({{ entity.name }} {{ entity.name | snake_case }}) {
+    return {
+{%- for field in entity.fields %}
+{%- if field.name == "id" or field.primary_key %}
+      'id': {{ entity.name | snake_case }}.id,
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.value,
+{%- elif field.type == "Email" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.value,
+{%- elif field.type == "DateTime" or field.type == "Timestamp" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.toIso8601String(),
+{%- elif field.type == "bool" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }},
+{%- elif field.type == "Vec<String>" or field.type == "List<String>" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.toList(),
+{%- elif field.type == "Json" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }},
+{%- else %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+    };
+  }
+
+  /// Convert simple map to domain {{ entity.name }}
+  {{ entity.name }} fromMap(Map<String, dynamic> map) {
+    try {
+      return {{ entity.name }}(
+{%- for field in entity.fields %}
+{%- if field.name == "id" or field.primary_key %}
+        id: map['id'] as String,
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+        {{ field.name }}: {{ field.name | pascal_case }}(map['{{ field.name }}'] as String? ?? map['id'] as String),
+{%- elif field.type == "Email" %}
+        {{ field.name }}: Email(map['{{ field.name }}'] as String),
+{%- elif field.type == "DateTime" or field.type == "Timestamp" %}
+        {{ field.name }}: DateTime.parse(map['{{ field.name }}'] as String),
+{%- elif field.type == "bool" %}
+        {{ field.name }}: map['{{ field.name }}'] as bool? ?? {{ field.default | default(value="false") }},
+{%- elif field.type == "Vec<String>" or field.type == "List<String>" %}
+        {{ field.name }}: (map['{{ field.name }}'] as List<dynamic>?)?.cast<String>().toSet() ?? {},
+{%- elif field.nullable %}
+        {{ field.name }}: map['{{ field.name }}'] as {{ field.flutter_type | default(value="String") }}?,
+{%- else %}
+        {{ field.name }}: map['{{ field.name }}'] as {{ field.flutter_type | default(value="String") }},
+{%- endif %}
+{%- endfor %}
+      );
+    } catch (e, st) {
+      throw ValidationException.single(
+        field: '{{ entity.name | snake_case }}',
+        message: 'Invalid {{ entity.name | snake_case }} data: $e',
+        code: '{{ entity.name | upper }}_DATA_INVALID',
+        rejectedValue: map,
+      );
+    }
+  }
+
+  /// Convert domain {{ entity.name }} to list item map (for API responses)
+  Map<String, dynamic> toListItem({{ entity.name }} {{ entity.name | snake_case }}) {
+    return {
+{%- for field in entity.fields %}
+{%- if field.primary_key %}
+      'id': {{ entity.name | snake_case }}.id,
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.value,
+{%- elif field.type == "Email" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.value,
+{%- elif field.type == "DateTime" or field.type == "Timestamp" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }}.toIso8601String(),
+{%- elif field.type == "bool" %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }},
+{%- else %}
+      '{{ field.name }}': {{ entity.name | snake_case }}.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+    };
+  }
+
+  /// Convert list of domain {{ entity.name }}s to list of maps
+  List<Map<String, dynamic>> toList(List<{{ entity.name }}> {{ entity.name | snake_case }}s) {
+    return {{ entity.name | snake_case }}s.map(({{ entity.name | snake_case }}) => toMap({{ entity.name | snake_case }})).toList();
+  }
+
+  /// Validate map has required fields
+  void validateMap(Map<String, dynamic> map, {bool requireId = true}) {
+    final errors = <ValidationError>[];
+    final requiredFields = <String>[];
+{%- for field in entity.fields %}
+{%- if not field.nullable and not field.primary_key %}
+    requiredFields.add('{{ field.name }}');
+{%- endif %}
+{%- endfor %}
+    
+    if (requireId) {
+      requiredFields.add('id');
+    }
+
+    for (final field in requiredFields) {
+      if (!map.containsKey(field) || map[field] == null) {
+        errors.add(ValidationError(
+          field: field,
+          message: 'Missing required field: $field',
+          code: 'MISSING_FIELD',
+          rejectedValue: map,
+        ));
+      }
+    }
+
+    // Validate field types
+{%- for field in entity.fields %}
+{%- if field.type == "Email" %}
+    if (map.containsKey('{{ field.name }}') && map['{{ field.name }}'] is! String) {
+      errors.add(ValidationError(
+        field: '{{ field.name }}',
+        message: '{{ field.name }} must be a string',
+        code: 'INVALID_FIELD_TYPE',
+        rejectedValue: map['{{ field.name }}'],
+      ));
+    }
+{%- elif field.type == "bool" %}
+    if (map.containsKey('{{ field.name }}') && map['{{ field.name }}'] is! bool) {
+      errors.add(ValidationError(
+        field: '{{ field.name }}',
+        message: '{{ field.name }} must be a boolean',
+        code: 'INVALID_FIELD_TYPE',
+        rejectedValue: map['{{ field.name }}'],
+      ));
+    }
+{%- endif %}
+{%- endfor %}
+    
+    if (errors.isNotEmpty) {
+      throw ValidationException.multiple(errors);
+    }
+  }
+}
+

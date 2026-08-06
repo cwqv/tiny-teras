@@ -1,0 +1,13 @@
+tasks:
+  - name: workspace_memo_module_descriptor
+    description: "Generate a minimal workspace memo module descriptor"
+    template: "core_workspace_module/v1"
+    template_file: "module_descriptor.tera"
+    target: "docs/generated/workspace-memo-module-descriptor.txt"
+    path: "workspace/memo"
+  - name: workspace_memo_module_registration
+    description: "Generate a minimal workspace memo module registration artifact"
+    template: "core_workspace_module/v1"
+    template_file: "module_registration.tera"
+    target: "docs/generated/workspace-memo-module-registration.txt"
+    path: "workspace/memo"

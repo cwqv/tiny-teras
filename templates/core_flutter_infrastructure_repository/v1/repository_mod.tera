@@ -1,0 +1,3 @@
+//! {{ entity.name }}仓储实现
+
+export 'grpc_{{ entity.name | snake_case }}_repository.dart';

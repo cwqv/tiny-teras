@@ -1,0 +1,332 @@
+import 'package:shared_domain/shared_domain.dart';
+
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+// ============ Enums ============
+{% for enum in entity.enums %}
+/// {{ enum.description | default(value=enum.name) }}
+enum {{ enum.dart_enum_name }} {
+  {%- for variant in enum.variants %}
+  {{ variant.snake_case }}{% if not loop.last %},{% endif %}
+  {%- endfor %}
+}
+
+extension {{ enum.dart_enum_name }}Extension on {{ enum.dart_enum_name }} {
+  /// 从数据库值创建枚举
+  static {{ enum.dart_enum_name }}? fromString(String value) {
+    switch (value) {
+      {%- for variant in enum.variants %}
+      case '{{ variant.value | as_str | default(value=variant.snake_case) }}':
+        return {{ enum.dart_enum_name }}.{{ variant.snake_case }};
+      {%- endfor %}
+      default:
+        return null;
+    }
+  }
+
+  /// 转换为数据库值
+  String toValue() {
+    switch (this) {
+      {%- for variant in enum.variants %}
+      case {{ enum.dart_enum_name }}.{{ variant.snake_case }}:
+        return '{{ variant.value | as_str | default(value=variant.snake_case) }}';
+      {%- endfor %}
+    }
+  }
+
+  /// 获取显示文本
+  String get display {
+    switch (this) {
+      {%- for variant in enum.variants %}
+      case {{ enum.dart_enum_name }}.{{ variant.snake_case }}:
+        return '{{ variant.display | default(value=variant.name) }}';
+      {%- endfor %}
+    }
+  }
+}
+
+{% endfor %}
+{%- endif %}
+
+/// {{ entity.description }}
+///
+/// 说明：
+/// - 继承 BaseEntity，复用 shared_domain 的通用功能
+{% if entity.description %}
+/// - {{ entity.description }}
+{% endif %}
+class {{ entity.name }} extends BaseEntity {
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+  /// {{ field.description }}
+  {%- set is_enum = false %}
+  {%- set enum_name = "" %}
+  {%- if entity.enums is defined and field.type is defined %}
+    {%- for enum in entity.enums %}
+      {%- if (field.type == enum.name) or (field.rust_type is defined and field.rust_type == enum.rust_enum_name) %}
+        {%- set is_enum = true %}
+        {%- set enum_name = enum.dart_enum_name %}
+        {%- break %}
+      {%- endif %}
+    {%- endfor %}
+  {%- endif %}
+  final {% if is_enum %}{{ enum_name }}{% elif field.flutter_type and field.flutter_type != "" %}{{ field.flutter_type }}{% else %}dynamic{% endif %}{% if field.nullable and not is_enum %}?{% endif %} {{ field.name }};
+
+{% endif %}
+{% endfor %}
+  {{ entity.name }}({
+    required super.id,
+    required super.createdAt,
+    required super.updatedAt,
+    super.createdBy,
+    super.updatedBy,
+    super.version,
+    super.isDeleted,
+    super.deletedAt,
+    super.deletedBy,
+    super.status,
+{% if features.multi_tenant %}
+    required super.tenantId,
+{% else %}
+    super.tenantId,
+{% endif %}
+    super.tags,
+    super.metadata,
+    super.auditTrail,
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+    {% if field.nullable %}this.{% else %}required this.{% endif %}{{ field.name }},
+{% endif %}
+{% endfor %}
+  }) : super();
+
+  /// 从 JSON 创建 {{ entity.name }}
+  factory {{ entity.name }}.fromJson(Map<String, dynamic> json) {
+    return {{ entity.name }}(
+      id: json['{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdBy: json['created_by'] as String?,
+      updatedBy: json['updated_by'] as String?,
+      version: json['version'] as int? ?? 1,
+      isDeleted: json['is_deleted'] as bool? ?? false,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
+      deletedBy: json['deleted_by'] as String?,
+      status: json['status'] as String?,
+{% if features.multi_tenant %}
+      tenantId: json['tenant_id'] as String,
+{% else %}
+      tenantId: json['tenant_id'] as String?,
+{% endif %}
+      tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toSet() ?? {},
+      metadata: json['metadata'] as Map<String, dynamic>? ?? {},
+      auditTrail: const [],
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {%- set is_enum = false %}
+      {%- set enum_name = "" %}
+      {%- if entity.enums is defined %}
+        {%- for enum in entity.enums %}
+          {%- if (field.type is defined and field.type == enum.name) or (field.rust_type is defined and field.rust_type == enum.rust_enum_name) %}
+            {%- set is_enum = true %}
+            {%- set enum_name = enum.dart_enum_name %}
+            {%- break %}
+          {%- endif %}
+        {%- endfor %}
+      {%- endif %}
+      {{ field.name }}: {% if is_enum %}{{ enum_name }}Extension.fromString(json['{{ field.name }}'] as String{% if field.nullable %}?{% endif %}){% if field.nullable %}?{% endif %}{% elif field.type == "Email" %}json['{{ field.name }}'] as String{% elif field.type == "Vec<String>" or field.type == "List<String>" %}(json['{{ field.name }}'] as List<dynamic>?)?.map((e) => e as String).toList(){% elif field.type == "bool" %}json['{{ field.name }}'] as bool{% elif field.type == "Uuid" %}json['{{ field.name }}'] as String{% else %}json['{{ field.name }}'] as {{ field.flutter_type }}{% endif %}{% if field.nullable and not is_enum %}?{% endif %},
+{% endif %}
+{% endfor %}
+    );
+  }
+
+  /// 转换为 JSON
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      '{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}': id,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'created_by': createdBy,
+      'updated_by': updatedBy,
+      'version': version,
+      'is_deleted': isDeleted,
+      'deleted_at': deletedAt?.toIso8601String(),
+      'deleted_by': deletedBy,
+      'status': status,
+      'tenant_id': tenantId,
+      'tags': tags.toList(),
+      'metadata': metadata,
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {%- set is_enum = false %}
+      {%- set enum_name = "" %}
+      {%- if entity.enums is defined %}
+        {%- for enum in entity.enums %}
+          {%- if (field.type is defined and field.type == enum.name) or (field.rust_type is defined and field.rust_type == enum.rust_enum_name) %}
+            {%- set is_enum = true %}
+            {%- set enum_name = enum.dart_enum_name %}
+            {%- break %}
+          {%- endif %}
+        {%- endfor %}
+      {%- endif %}
+      '{{ field.name }}': {% if is_enum %}{{ field.name }}{% if field.nullable %}?{% endif %}.toValue(){% else %}{{ field.name }}{% endif %}{% if field.type == "Vec<String>" or field.type == "List<String>" %}{% endif %},
+{% endif %}
+{% endfor %}
+    };
+  }
+
+  /// 创建副本
+  {{ entity.name }} copyWith({
+    String? id,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    String? updatedBy,
+    int? version,
+    bool? isDeleted,
+    DateTime? deletedAt,
+    String? deletedBy,
+    String? status,
+    String? tenantId,
+    Set<String>? tags,
+    Map<String, dynamic>? metadata,
+    List<AuditTrailEntry>? auditTrail,
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {%- set is_enum = false %}
+      {%- set enum_name = "" %}
+      {%- if entity.enums is defined %}
+        {%- for enum in entity.enums %}
+          {%- if (field.type is defined and field.type == enum.name) or (field.rust_type is defined and field.rust_type == enum.rust_enum_name) %}
+            {%- set is_enum = true %}
+            {%- set enum_name = enum.dart_enum_name %}
+            {%- break %}
+          {%- endif %}
+        {%- endfor %}
+      {%- endif %}
+    {% if is_enum %}{{ enum_name }}{% else %}{{ field.flutter_type }}{% endif %}{% if field.nullable %}?{% endif %}? {{ field.name }},
+{% endif %}
+{% endfor %}
+  }) {
+    return {{ entity.name }}(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      updatedBy: updatedBy ?? this.updatedBy,
+      version: version ?? this.version,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+      status: status ?? this.status,
+      tenantId: tenantId ?? this.tenantId,
+      tags: tags ?? this.tags,
+      metadata: metadata ?? this.metadata,
+      auditTrail: auditTrail ?? this.auditTrail,
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {{ field.name }}: {{ field.name }} ?? this.{{ field.name }},
+{% endif %}
+{% endfor %}
+    );
+  }
+
+{% for field in entity.fields %}
+{% if field.name == "is_active" %}
+  /// 确保{{ entity.name }}处于激活状态
+  void ensureActive() {
+    if (!{{ field.name }}) {
+      throw StateError('{{ entity.name }}已被禁用');
+    }
+  }
+
+{% endif %}
+{% endfor %}
+
+{%- if entity.validations is defined and entity.validations | length > 0 %}
+  /// 验证实体数据
+  /// 返回验证错误列表，如果验证通过则返回空列表
+  List<String> validate() {
+    final errors = <String>[];
+    
+    {%- for validation in entity.validations %}
+    {%- set field_name = validation.field %}
+    // 验证字段: {{ field_name }}
+    {%- for rule in validation.rules %}
+    {%- if rule.type == "required" %}
+    if ({{ field_name }} == null || ({{ field_name }} is String && {{ field_name }}.isEmpty)) {
+      errors.add('{{ rule.message | default(value=field_name ~ "不能为空") }}');
+    }
+    {%- elif rule.type == "length" %}
+    {%- if rule.min is defined %}
+    if ({{ field_name }} is String && {{ field_name }}.length < {{ rule.min }}) {
+      errors.add('{{ rule.message | default(value=field_name ~ "长度不能少于" ~ rule.min ~ "个字符") }}');
+    }
+    {%- endif %}
+    {%- if rule.max is defined %}
+    if ({{ field_name }} is String && {{ field_name }}.length > {{ rule.max }}) {
+      errors.add('{{ rule.message | default(value=field_name ~ "长度不能超过" ~ rule.max ~ "个字符") }}');
+    }
+    {%- endif %}
+    {%- elif rule.type == "range" %}
+    {%- if rule.min is defined %}
+    if ({{ field_name }} is num && {{ field_name }} < {{ rule.min }}) {
+      errors.add('{{ rule.message | default(value=field_name ~ "不能小于" ~ rule.min) }}');
+    }
+    {%- endif %}
+    {%- if rule.max is defined %}
+    if ({{ field_name }} is num && {{ field_name }} > {{ rule.max }}) {
+      errors.add('{{ rule.message | default(value=field_name ~ "不能大于" ~ rule.max) }}');
+    }
+    {%- endif %}
+    {%- elif rule.type == "pattern" %}
+    final regex = RegExp(r'{{ rule.regex }}');
+    if ({{ field_name }} is String && !regex.hasMatch({{ field_name }})) {
+      errors.add('{{ rule.message | default(value=field_name ~ "格式不正确") }}');
+    }
+    {%- endif %}
+    {%- endfor %}
+    {%- endfor %}
+    
+    return errors;
+  }
+
+  /// 验证实体数据，如果验证失败则抛出异常
+  void validateOrThrow() {
+    final errors = validate();
+    if (errors.isNotEmpty) {
+      throw StateError('验证失败:\n${errors.join('\n')}');
+    }
+  }
+{%- endif %}
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is {{ entity.name }} &&
+        other.id == id &&
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+        other.{{ field.name }} == {{ field.name }}{% if not loop.last %} &&{% endif %}
+{% endif %}
+{% endfor %};
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      id,
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {{ field.name }},
+{% endif %}
+{% endfor %}
+    );
+  }
+
+  @override
+  String toString() {
+    return '{{ entity.name }}{id: $id, {% for field in entity.fields %}{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}{{ field.name }}: ${{ field.name }}{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}}';
+  }
+}

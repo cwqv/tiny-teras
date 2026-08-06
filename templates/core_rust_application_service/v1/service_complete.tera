@@ -1,0 +1,91 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use std::sync::Arc;
+
+use uuid::Uuid;
+
+use shared_application::error::ApplicationResult;
+use shared_application::services::authentication_service::AuthenticationService;
+use shared_infra_events::unified::event_service::UnifiedEventService;
+
+use crate::application::commands::create_{{ entity_snake }}_command::{Create{{ entity_pascal }}Command, Create{{ entity_pascal }}Result};
+use crate::application::commands::update_{{ entity_snake }}_command::Update{{ entity_pascal }}Command;
+use crate::application::commands::delete_{{ entity_snake }}_command::Delete{{ entity_pascal }}Command;
+use crate::application::queries::get_{{ entity_snake }}_query::Get{{ entity_pascal }}Query;
+use crate::application::queries::list_{{ entity_snake }}s_query::List{{ entity_pascal }}sQuery;
+use crate::application::handlers::create_{{ entity_snake }}_command_handler::Create{{ entity_pascal }}CommandHandler;
+use crate::application::handlers::get_{{ entity_snake }}_query_handler::Get{{ entity_pascal }}QueryHandler;
+use crate::application::handlers::list_{{ entity_snake }}s_query_handler::List{{ entity_pascal }}sQueryHandler;
+use crate::domain::entities::{{ entity_snake }}::{{ entity_pascal }};
+use crate::domain::repositories::{{ entity_snake }}_repository::{{ entity_pascal }}Repository;
+
+/// Application service for {{ entity.description | default(value=entity.name) }} management
+///
+/// This service orchestrates business operations for {{ entity.name }}s,
+/// delegating to command/query handlers and coordinating cross-cutting concerns.
+pub struct {{ entity_pascal }}Service<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    create_handler: Create{{ entity_pascal }}CommandHandler<R>,
+    get_handler: Get{{ entity_pascal }}QueryHandler<R>,
+    list_handler: List{{ entity_pascal }}sQueryHandler<R>,
+}
+
+impl<R> {{ entity_pascal }}Service<R>
+where
+    R: {{ entity_pascal }}Repository,
+{
+    /// Create a new {{ entity.description | default(value=entity.name) }} service
+    pub fn new(
+        repo: Arc<R>,
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+        auth_service: AuthenticationService,
+{% endif %}
+        event_service: Option<Arc<UnifiedEventService>>,
+    ) -> Self {
+        let mut create_handler = Create{{ entity_pascal }}CommandHandler::new(
+            repo.clone(),
+{% if entity.name == "User" or  "Credential" in entity.name  %}
+            auth_service,
+{% endif %}
+        );
+
+        if let Some(events) = event_service {
+            create_handler = create_handler.with_event_service(events);
+        }
+
+        Self {
+            create_handler,
+            get_handler: Get{{ entity_pascal }}QueryHandler::new(repo.clone()),
+            list_handler: List{{ entity_pascal }}sQueryHandler::new(repo.clone()),
+        }
+    }
+
+    /// Create a new {{ entity.description | default(value=entity.name) }}
+    pub async fn create(&self, command: Create{{ entity_pascal }}Command) -> ApplicationResult<Create{{ entity_pascal }}Result> {
+        self.create_handler.execute(command).await
+    }
+
+    /// Get {{ entity.description | default(value=entity.name) }} by ID
+    pub async fn get(&self, query: Get{{ entity_pascal }}Query) -> ApplicationResult<{{ entity_pascal }}> {
+        self.get_handler.execute(query).await
+    }
+
+    /// List {{ entity.description | default(value=entity.name) }}s
+    pub async fn list(&self, query: List{{ entity_pascal }}sQuery) -> ApplicationResult<Vec<{{ entity_pascal }}>> {
+        self.list_handler.execute(query).await
+    }
+
+    // TODO: Add update and delete methods
+    // pub async fn update(&self, command: Update{{ entity_pascal }}Command) -> ApplicationResult<()>
+    // pub async fn delete(&self, command: Delete{{ entity_pascal }}Command) -> ApplicationResult<()>
+}
+
+// <<< block:custom_service_methods
+// 自定义服务方法（在此添加自定义的业务逻辑）
+// 示例：
+// pub async fn activate_{{ entity_snake }}(&self, id: Uuid) -> ApplicationResult<()> {
+//     // 实现激活逻辑
+// }
+// >>> end:custom_service_methods

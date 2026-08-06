@@ -1,0 +1,92 @@
+{%- if method.name == "Get" %}
+use std::sync::Arc;
+
+use shared_application::error::ApplicationResult;
+
+use crate::application::queries::{{ method.name | lower }}_{{ entity.name | snake_case }}_query::{Get{{ entity.name }}Query, Get{{ entity.name }}Result};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// Query handler for getting a {{ entity.name | snake_case }}
+pub struct Get{{ entity.name }}QueryHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+}
+
+impl<R> Get{{ entity.name }}QueryHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, query: Get{{ entity.name }}Query) -> ApplicationResult<Get{{ entity.name }}Result> {
+{%- if features.multi_tenant %}
+        let {{ entity.name | snake_case }} = self.repo.find_by_id(query.{{ entity.name | snake_case }}_id{% if features.multi_tenant %}, query.tenant_id.as_deref(){% endif %}).await?;
+{%- else %}
+        let {{ entity.name | snake_case }} = self.repo.find_by_id(query.{{ entity.name | snake_case }}_id).await?;
+{%- endif %}
+        Ok(Get{{ entity.name }}Result::new({{ entity.name | snake_case }}))
+    }
+}
+
+{%- elif method.name == "List" %}
+use std::sync::Arc;
+
+use shared_application::error::ApplicationResult;
+
+use crate::application::queries::{{ method.name | lower }}_{{ entity.name | snake_case }}s_query::{List{{ entity.name }}sQuery, List{{ entity.name }}sResult};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// Query handler for listing {{ entity.name | snake_case }}s
+pub struct List{{ entity.name }}sQueryHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+}
+
+impl<R> List{{ entity.name }}sQueryHandler<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, query: List{{ entity.name }}sQuery) -> ApplicationResult<List{{ entity.name }}sResult> {
+{%- if features.search %}
+        let {{ entity.name | snake_case }}s = self
+            .repo
+            .search(
+                query.tenant_id.as_deref(),
+                query.search_query.as_deref(),
+{%- for field in entity.fields %}
+{%- if field.name == "roles" or field.name == "role" %}
+                query.{{ field.name }}.as_deref().map(|v| v.as_ref()),
+{%- elif field.name == "is_active" or field.name == "status" %}
+                query.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+                query.limit,
+                query.offset,
+            )
+            .await?;
+{%- else %}
+{%- if features.multi_tenant %}
+        let {{ entity.name | snake_case }}s = self.repo.list_by_tenant(
+            query.tenant_id.as_deref().unwrap_or(""),
+        ).await?;
+{%- else %}
+        let {{ entity.name | snake_case }}s = self.repo.list_all().await?;
+{%- endif %}
+{%- endif %}
+
+        Ok(List{{ entity.name }}sResult::new({{ entity.name | snake_case }}s))
+    }
+}
+
+{%- endif %}
+

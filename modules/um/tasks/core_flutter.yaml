@@ -1,0 +1,202 @@
+# Flutter 相关任务配置
+tasks:
+  # Flutter Application DTO 生成任务
+  - name: um_flutter_application_dto
+    description: "用户管理模块 Flutter Application DTO 生成任务"
+    template: "core_flutter_application_dto/v1"
+    template_file: "dto.tera"
+    target: "lib/features/um/application/dto/user_dto.dart"
+    path: "lib/features/um"
+
+    features:
+      multi_tenant: true
+      pagination: true
+      search: true
+
+    dto_fields:
+      create:
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - roles
+      get:
+        - id
+        - tenant_id
+      list:
+        - tenant_id
+        - search_query
+        - roles
+        - is_active
+        - limit
+        - offset
+      update:
+        - id
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - avatar_url
+        - phone
+        - roles
+        - is_active
+      delete:
+        - id
+        - tenant_id
+
+  # Flutter Application Use Case 生成任务
+  - name: um_flutter_application_use_case
+    description: "用户管理模块 Flutter Application Use Case 生成任务"
+    template: "core_flutter_application_use_case/v1"
+    template_file: "use_case.tera"
+    architecture_mode: "cqrs"
+    target: "lib/features/um/application/use_cases/user_use_cases.dart"
+    path: "lib/features/um"
+
+    use_cases:
+      - name: GetUser
+        description: "获取单个用户"
+        input_dto: GetUserDto
+        output_dto: UserDto
+      - name: ListUsers
+        description: "获取用户列表"
+        input_dto: ListUsersDto
+        output_dto: List<UserDto>
+      - name: CreateUser
+        description: "创建用户"
+        input_dto: CreateUserDto
+        output_dto: UserDto
+      - name: UpdateUser
+        description: "更新用户"
+        input_dto: UpdateUserDto
+        output_dto: UserDto
+      - name: DeleteUser
+        description: "删除用户"
+        input_dto: DeleteUserDto
+        output_dto: void
+
+  # Flutter Domain Entity 生成任务
+  - name: um_flutter_domain_entity
+    description: "用户管理模块 Flutter Domain Entity 生成任务"
+    template: "core_flutter_domain_entity/v1"
+    template_file: "entity.tera"
+    target: "lib/features/um/domain/entities/user.dart"
+    path: "lib/features/um"
+
+    features:
+      freezed: true
+      json_serializable: true
+      equatable: false
+
+  # Flutter Domain Repository 生成任务
+  - name: um_flutter_domain_repository
+    description: "用户管理模块 Flutter Domain Repository 生成任务"
+    template: "core_flutter_domain_repository/v1"
+    template_file: "repository.tera"
+    target: "lib/features/um/domain/repositories/user_repository.dart"
+    path: "lib/features/um"
+
+    repository_methods:
+      - name: getUser
+        description: "获取单个用户"
+        input_type: GetUserDto
+        output_type: Future<Either<Failure, UserDto>>
+      - name: listUsers
+        description: "获取用户列表"
+        input_type: ListUsersDto
+        output_type: Future<Either<Failure, List<UserDto>>>
+      - name: createUser
+        description: "创建用户"
+        input_type: CreateUserDto
+        output_type: Future<Either<Failure, UserDto>>
+      - name: updateUser
+        description: "更新用户"
+        input_type: UpdateUserDto
+        output_type: Future<Either<Failure, UserDto>>
+      - name: deleteUser
+        description: "删除用户"
+        input_type: DeleteUserDto
+        output_type: Future<Either<Failure, void>>
+
+  # Flutter Infrastructure Repository 生成任务
+  - name: um_flutter_infrastructure_repository
+    description: "用户管理模块 Flutter Infrastructure Repository 实现生成任务"
+    template: "core_flutter_infrastructure_repository/v1"
+    template_file: "repository_grpc.tera"
+    target: "lib/features/um/infrastructure/repositories/user_repository_impl.dart"
+    path: "lib/features/um"
+
+    features:
+      use_grpc: true
+      use_rest_api: false
+      cache_enabled: true
+      offline_support: false
+
+    repository_methods:
+      - name: getUser
+        grpc_method: "GetUser"
+        cache_key: "user_{id}"
+      - name: listUsers
+        grpc_method: "ListUsers"
+        cache_key: "users_list_{tenant_id}"
+      - name: createUser
+        grpc_method: "CreateUser"
+        invalidate_cache: ["users_list_*"]
+      - name: updateUser
+        grpc_method: "UpdateUser"
+        invalidate_cache: ["user_{id}", "users_list_*"]
+      - name: deleteUser
+        grpc_method: "DeleteUser"
+        invalidate_cache: ["user_{id}", "users_list_*"]
+
+  # Flutter Presentation Provider 生成任务
+  - name: um_flutter_presentation_provider
+    description: "用户管理模块 Flutter Presentation Provider 生成任务"
+    template: "core_flutter_presentation_provider/v1"
+    template_file: "provider.tera"
+    target: "lib/features/um/presentation/providers/user_provider.dart"
+    path: "lib/features/um"
+
+    features:
+      state_management: "riverpod"  # riverpod, bloc, provider
+      loading_state: true
+      error_handling: true
+      pagination: true
+
+    provider_states:
+      - name: UserState
+        fields:
+          - name: users
+            type: List<UserDto>
+          - name: selectedUser
+            type: UserDto?
+          - name: isLoading
+            type: bool
+          - name: error
+            type: String?
+          - name: currentPage
+            type: int
+          - name: hasMore
+            type: bool
+
+  # Flutter Presentation Screen 生成任务
+  - name: um_flutter_presentation_screen
+    description: "用户管理模块 Flutter Presentation Screen 生成任务"
+    template: "core_flutter_presentation_screen/v1"
+    template_file: "screen_list.tera"
+    target: "lib/features/um/presentation/screens/user_list_screen.dart"
+    path: "lib/features/um"
+
+    features:
+      responsive_design: true
+      pull_to_refresh: true
+      infinite_scroll: true
+      search_bar: true
+      filter_options: true
+
+    screen_config:
+      screen_name: UserListScreen
+      screen_title: "用户管理"
+      use_app_bar: true
+      use_bottom_nav: false
+      use_floating_action_button: true

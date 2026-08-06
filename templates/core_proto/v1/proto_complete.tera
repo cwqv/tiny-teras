@@ -1,0 +1,56 @@
+{#- 
+  Proto Complete Service Template
+  Generates a complete .proto file with service definition.
+  Imports message and request/response definitions to avoid duplication.
+-#}
+syntax = "proto3";
+
+package {{ task.proto_package | default(value="tinydev.v1." ~ project) }};
+
+{# Proto 导入路径 #}
+import "tinydev/v1/sys/common.proto";
+import "{{ task.proto_import_path }}/{{ entity.name | snake_case }}_message.proto";
+import "{{ task.proto_import_path }}/{{ entity.name | snake_case }}_requests.proto";
+
+{%- if entity.proto_imports is defined and entity.proto_imports | length > 0 %}
+  {%- for import_path in entity.proto_imports %}
+import "{{ import_path }}";
+  {%- endfor %}
+{%- endif %}
+
+{%- set entity_name_lower = entity.name | lower -%}
+{%- set service_name = entity.grpc_service_name | default(value=entity.name) -%}
+
+// ============ {{ service_name }}Service ============
+
+service {{ service_name }}Service {
+{%- if entity.service_methods is defined and entity.service_methods | length > 0 %}
+  {# 使用自定义服务方法配置 #}
+  {%- for method in entity.service_methods %}
+    {%- if method == "Get" %}
+  rpc Get{{ entity.name }}(Get{{ entity.name }}Request) returns (Get{{ entity.name }}Response);
+    {%- elif method == "List" %}
+  rpc List{{ entity.name }}s(List{{ entity.name }}sRequest) returns (List{{ entity.name }}sResponse);
+    {%- elif method == "GetPaged" %}
+  rpc Get{{ entity.name }}sPaged(Get{{ entity.name }}sPagedRequest) returns (Get{{ entity.name }}sPagedResponse);
+    {%- elif method == "Create" %}
+  rpc Create{{ entity.name }}(Create{{ entity.name }}Request) returns (Create{{ entity.name }}Response);
+    {%- elif method == "Update" %}
+  rpc Update{{ entity.name }}(Update{{ entity.name }}Request) returns (Update{{ entity.name }}Response);
+    {%- elif method == "Delete" %}
+  rpc Delete{{ entity.name }}(Delete{{ entity.name }}Request) returns (Empty);
+    {%- elif method == "BatchDelete" %}
+  rpc BatchDelete{{ entity.name }}s(BatchDelete{{ entity.name }}sRequest) returns (BatchDelete{{ entity.name }}sResponse);
+    {%- endif %}
+  {%- endfor %}
+{%- else %}
+  {# 默认完整 CRUD 方法 #}
+  rpc Get{{ entity.name }}(Get{{ entity.name }}Request) returns (Get{{ entity.name }}Response);
+  rpc List{{ entity.name }}s(List{{ entity.name }}sRequest) returns (List{{ entity.name }}sResponse);
+  rpc Get{{ entity.name }}sPaged(Get{{ entity.name }}sPagedRequest) returns (Get{{ entity.name }}sPagedResponse);
+  rpc Create{{ entity.name }}(Create{{ entity.name }}Request) returns (Create{{ entity.name }}Response);
+  rpc Update{{ entity.name }}(Update{{ entity.name }}Request) returns (Update{{ entity.name }}Response);
+  rpc Delete{{ entity.name }}(Delete{{ entity.name }}Request) returns (Empty);
+  rpc BatchDelete{{ entity.name }}s(BatchDelete{{ entity.name }}sRequest) returns (BatchDelete{{ entity.name }}sResponse);
+{%- endif %}
+}

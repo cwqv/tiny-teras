@@ -1,0 +1,99 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+{% for field in entity.fields %}
+{% if  "Email" in field.rust_type  %}
+use shared_domain::value_objects::Email;
+{% break %}
+{% endif %}
+{% endfor %}
+{%- if entity.enums is defined and entity.enums | length > 0 %}
+use crate::domain::entities::{% for enum in entity.enums %}{{ enum.rust_enum_name }}{% if not loop.last %}, {% endif %}{% endfor %};
+{%- endif %}
+
+/// 创建{{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Create{{ entity.name | pascal_case }}Dto {
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "tenant_id" or field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" %}
+{% continue %}
+{% endif %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name | snake_case }}: {{ field.rust_type }},
+{% endif %}
+{% endfor %}
+}
+
+/// 创建{{ entity.description | default(value=entity.name) }}响应 DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Created{{ entity.name | pascal_case }}Dto {
+    /// {{ entity.name }} ID
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// 租户 ID
+    pub tenant_id: String,
+{% endif %}
+}
+
+/// 获取{{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Get{{ entity.name | pascal_case }}Dto {
+    /// {{ entity.name }} ID
+    pub {{ entity.name | snake_case }}_id: Uuid,
+}
+
+/// 列表查询{{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct List{{ entity.name | pascal_case }}sDto {
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// 租户 ID（可选）
+    pub tenant_id: Option<String>,
+{% endif %}
+{% for field in entity.fields %}
+{% if field.searchable | default(value=false) %}
+    /// {{ field.description }}搜索（可选）
+    pub {{ field.name | snake_case }}: Option<{{ field.rust_type }}>,
+{% endif %}
+{% endfor %}
+    /// 搜索关键词（可选）
+    pub search_query: Option<String>,
+    /// 限制数量（可选）
+    pub limit: Option<usize>,
+    /// 偏移量（可选）
+    pub offset: Option<usize>,
+}
+
+/// 更新{{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Update{{ entity.name | pascal_case }}Dto {
+    /// {{ entity.name }} ID
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// 租户 ID
+    pub tenant_id: String,
+{% endif %}
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "tenant_id" or field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" or field.name == "id" %}
+{% continue %}
+{% endif %}
+    /// {{ field.description }}（可选）
+    pub {{ field.name | snake_case }}: Option<{{ field.rust_type }}>,
+{% endif %}
+{% endfor %}
+}
+
+/// 删除{{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Delete{{ entity.name | pascal_case }}Dto {
+    /// {{ entity.name }} ID
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// 租户 ID
+    pub tenant_id: String,
+{% endif %}
+}
+
+// <<< block:custom_dtos
+// 自定义 DTO 定义（在此添加自定义的 DTO 结构）
+// >>> end:custom_dtos

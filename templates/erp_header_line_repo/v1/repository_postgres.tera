@@ -1,0 +1,242 @@
+{# ERP Header-Line Repository 模板 — 生成事务性 save_with_lines() #}
+{# 预期 YAML 变量:                                                              #}
+{#   entity.name        — Header 实体名 (e.g. SaleOrder)                        #}
+{#   entity.table        — Header 表名 (e.g. sale.orders)                       #}
+{#   entity.fields[]     — Header 字段列表                                       #}
+{#   entity.line_entity  — Line 实体配置                                         #}
+{#     .name             — Line 实体名 (e.g. SaleOrderLine)                     #}
+{#     .table            — Line 表名 (e.g. sale.order_lines)                    #}
+{#     .fields[]         — Line 字段列表                                         #}
+{#     .header_fk        — Line → Header 外键字段名 (e.g. order_id)              #}
+{#   entity.features     — 特性开关                                              #}
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+{%- if entity.line_entity is defined %}
+use crate::domain::entities::{{ entity.line_entity.name | snake_case }}::{{ entity.line_entity.name }};
+{%- endif %}
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// PostgreSQL {{ entity.name }} 仓储实现（含 header-line 事务写入）
+pub struct Postgres{{ entity.name }}Repository {
+    pool: Arc<PgPool>,
+}
+
+impl Postgres{{ entity.name }}Repository {
+    pub fn new(pool: Arc<PgPool>) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
+    // ── Header CRUD ─────────────────────────────────────────────
+
+    async fn find_by_id(&self, id: Uuid) -> ApplicationResult<Option<{{ entity.name }}>> {
+        let row = sqlx::query_as!(
+            {{ entity.name }},
+            r#"SELECT * FROM {{ entity.table }} WHERE id = $1"#,
+            id,
+        )
+        .fetch_optional(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("查询 {{ entity.name }} 失败: {}", e)))?;
+
+        Ok(row)
+    }
+
+{% if entity.features.tenant_aware | default(value=false) %}
+    async fn list_by_tenant(&self, tenant_id: Uuid) -> ApplicationResult<Vec<{{ entity.name }}>> {
+        let rows = sqlx::query_as!(
+            {{ entity.name }},
+            r#"SELECT * FROM {{ entity.table }}
+               WHERE tenant_id = $1
+               ORDER BY created_at DESC"#,
+            tenant_id,
+        )
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!("查询 {{ entity.name }} 列表失败: {}", e)))?;
+
+        Ok(rows)
+    }
+{% endif %}
+
+{% if entity.line_entity is defined %}
+    // ── Header + Lines 事务写入 ──────────────────────────────────
+
+    /// 事务性保存 {{ entity.name }} 及其所有 {{ entity.line_entity.name }}
+    ///
+    /// 策略: DELETE-then-INSERT lines（避免复杂 diff 逻辑，行数据由前端
+    /// 完整提交，服务端整体替换）。
+    ///
+    /// 含乐观锁: header.version 校验。
+    async fn save_with_lines(
+        &self,
+        header: &{{ entity.name }},
+        lines: &[{{ entity.line_entity.name }}],
+    ) -> ApplicationResult<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            ApplicationError::internal(format!("开启事务失败: {}", e))
+        })?;
+
+{%- if entity.features.optimistic_locking | default(value=false) %}
+        // ── 乐观锁检查 ──
+        let current_version: Option<(i32,)> = sqlx::query_as(
+            r#"SELECT version FROM {{ entity.table }} WHERE id = $1 FOR UPDATE"#,
+        )
+        .bind(header.id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| ApplicationError::internal(format!("乐观锁查询失败: {}", e)))?;
+
+        if let Some((db_version,)) = current_version {
+            if db_version != header.version {
+                return Err(ApplicationError::conflict(format!(
+                    "{{ entity.name }} 版本冲突: 期望 {} 但数据库为 {}",
+                    header.version, db_version
+                )));
+            }
+        }
+{%- endif %}
+
+        // ── Upsert header ──
+        sqlx::query(
+            r#"
+            INSERT INTO {{ entity.table }} (
+{%- for field in entity.fields %}
+                {{ field.name }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+            )
+            VALUES (
+{%- for field in entity.fields %}
+                ${{ loop.index }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+            )
+            ON CONFLICT (id) DO UPDATE SET
+{%- for field in entity.fields %}
+{%- if not field.primary_key %}
+                {{ field.name }} = EXCLUDED.{{ field.name }}{% if not loop.last %},{% endif %}
+{%- endif %}
+{%- endfor %}
+            "#,
+        )
+{%- for field in entity.fields %}
+        .bind(&header.{{ field.name }})
+{%- endfor %}
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| ApplicationError::internal(format!("保存 {{ entity.name }} 失败: {}", e)))?;
+
+        // ── Delete existing lines ──
+        sqlx::query(
+            r#"DELETE FROM {{ entity.line_entity.table }} WHERE {{ entity.line_entity.header_fk }} = $1"#,
+        )
+        .bind(header.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| ApplicationError::internal(format!("删除旧 {{ entity.line_entity.name }} 失败: {}", e)))?;
+
+        // ── Insert new lines ──
+        for line in lines {
+            sqlx::query(
+                r#"
+                INSERT INTO {{ entity.line_entity.table }} (
+{%- for field in entity.line_entity.fields %}
+                    {{ field.name }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+                )
+                VALUES (
+{%- for field in entity.line_entity.fields %}
+                    ${{ loop.index }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+                )
+                "#,
+            )
+{%- for field in entity.line_entity.fields %}
+            .bind(&line.{{ field.name }})
+{%- endfor %}
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ApplicationError::internal(format!("插入 {{ entity.line_entity.name }} 失败: {}", e)))?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            ApplicationError::internal(format!("提交事务失败: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    // ── Lines 查询 ──────────────────────────────────────────────
+
+    /// 查询 {{ entity.name }} 的所有 {{ entity.line_entity.name }}
+    async fn find_lines_by_header_id(
+        &self,
+        header_id: Uuid,
+    ) -> ApplicationResult<Vec<{{ entity.line_entity.name }}>> {
+        let rows = sqlx::query_as!(
+            {{ entity.line_entity.name }},
+            r#"SELECT * FROM {{ entity.line_entity.table }}
+               WHERE {{ entity.line_entity.header_fk }} = $1
+               ORDER BY sequence ASC, id ASC"#,
+            header_id,
+        )
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| ApplicationError::internal(format!(
+            "查询 {{ entity.line_entity.name }} 失败: {}", e
+        )))?;
+
+        Ok(rows)
+    }
+{% endif %}
+
+    // ── Delete ──────────────────────────────────────────────────
+
+    async fn delete(&self, id: Uuid) -> ApplicationResult<()> {
+{%- if entity.line_entity is defined %}
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            ApplicationError::internal(format!("开启事务失败: {}", e))
+        })?;
+
+        // 先删 lines
+        sqlx::query(
+            r#"DELETE FROM {{ entity.line_entity.table }} WHERE {{ entity.line_entity.header_fk }} = $1"#,
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| ApplicationError::internal(format!("删除 {{ entity.line_entity.name }} 失败: {}", e)))?;
+
+        // 再删 header
+        sqlx::query(r#"DELETE FROM {{ entity.table }} WHERE id = $1"#)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ApplicationError::internal(format!("删除 {{ entity.name }} 失败: {}", e)))?;
+
+        tx.commit().await.map_err(|e| {
+            ApplicationError::internal(format!("提交事务失败: {}", e))
+        })?;
+{%- else %}
+        sqlx::query(r#"DELETE FROM {{ entity.table }} WHERE id = $1"#)
+            .bind(id)
+            .execute(self.pool.as_ref())
+            .await
+            .map_err(|e| ApplicationError::internal(format!("删除 {{ entity.name }} 失败: {}", e)))?;
+{%- endif %}
+
+        Ok(())
+    }
+}
+
+// <<< block:custom_repository
+// 在这里添加自定义仓储方法（会在重新生成时保留）
+// >>> end:custom_repository

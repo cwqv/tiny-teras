@@ -1,0 +1,3 @@
+//! 仓储实现
+
+pub mod postgres_{{ entity.name | snake_case }}_repository;

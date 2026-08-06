@@ -1,0 +1,6 @@
+module descriptor
+id: {{ module_id }}
+title: {{ module_title }}
+icon: {{ module_icon }}
+capabilities: {{ module_capabilities | join(sep=", ") }}
+path: {{ path | default(value="workspace/task") }}

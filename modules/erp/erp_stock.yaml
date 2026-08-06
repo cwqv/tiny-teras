@@ -1,0 +1,1221 @@
+# ERP Stock 模块 Tera 项目配置
+# 版本: v1
+# 描述: 库存模块 (Warehouse, StockLocation, StockPicking, StockMove, StockMoveLine, StockQuant, StockLot)
+#
+# 对应 Rust domain: core_rust/crates/libs/erp/erp_stock/src/domain/entities/
+
+module:
+  name: erp_stock
+  schema: stock
+  display_name: "Stock"
+  description: "ERP 库存模块 — 仓库、库位、拣货单、库存移动、库存量、批次号"
+
+entities:
+  # ─── Warehouse (仓库) ──────────────────────────────────
+  - name: Warehouse
+    table: stock.warehouses
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "Warehouse ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "仓库名称"
+        searchable: true
+        search_operator: "ILIKE"
+
+      - name: code
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "仓库短代码 (max 5 chars)"
+
+      - name: partner_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "关联合作伙伴（地址）"
+        relation: base.partners
+
+      - name: view_location_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "顶层视图库位"
+        relation: stock.locations
+
+      - name: lot_stock_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "主库存库位"
+        relation: stock.locations
+
+      - name: reception_steps
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        default: "one_step"
+        description: "收货步骤 (one_step / two_steps / three_steps)"
+
+      - name: delivery_steps
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        default: "ship_only"
+        description: "发货步骤 (ship_only / pick_ship / pick_pack_ship)"
+
+      - name: wh_input_stock_loc_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "入库暂存库位"
+
+      - name: wh_qc_stock_loc_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "质检库位"
+
+      - name: wh_output_stock_loc_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "出库暂存库位"
+
+      - name: wh_pack_stock_loc_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "打包库位"
+
+      - name: in_type_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "入库拣货类型"
+
+      - name: out_type_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "出库拣货类型"
+
+      - name: int_type_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "内部调拨拣货类型"
+
+      - name: sequence
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+        description: "排序"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockLocation (库位，自引用层级) ──────────────────────────────────
+  - name: StockLocation
+    table: stock.locations
+    aggregate_root: true
+    hierarchical: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+
+    indexed_fields:
+      - name
+      - usage
+      - location_id
+      - warehouse_id
+      - tenant_id
+      - barcode
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockLocation ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "库位名称"
+        searchable: true
+        search_operator: "ILIKE"
+
+      - name: complete_name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "完整路径名 (e.g. WH/Stock/Zone A)"
+
+      - name: usage
+        type: String
+        rust_type: "LocationUsage"
+        nullable: false
+        default: "internal"
+        description: "库位用途 (supplier/customer/internal/production/transit/inventory/view)"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "父库位 (自引用)"
+        relation: stock.locations
+
+      - name: parent_path
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "层级路径 (用于快速子树查询)"
+
+      - name: replenish_location
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否为补货库位"
+
+      - name: barcode
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "条码"
+
+      - name: cyclic_inventory_frequency
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+        description: "盘点频率 (天)"
+
+      - name: warehouse_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "所属仓库"
+        relation: stock.warehouses
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockPicking (拣货单 聚合根) ──────────────────────────────────
+  - name: StockPicking
+    table: stock.pickings
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - GetPaged
+      - Create
+      - Update
+      - CheckAvailability
+      - ValidatePicking
+      - Cancel
+
+    domain_events:
+      - PickingValidated
+      - PickingCancelled
+
+    indexed_fields:
+      - name
+      - state
+      - picking_type_id
+      - partner_id
+      - location_id
+      - location_dest_id
+      - tenant_id
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockPicking ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "单号 (e.g. WH/OUT/00001)"
+        searchable: true
+        search_operator: "ILIKE"
+
+      - name: origin
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "来源单据"
+
+      - name: note
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "备注"
+
+      - name: state
+        type: String
+        rust_type: "PickingState"
+        nullable: false
+        default: "draft"
+        description: "状态 (draft/waiting/ready/done/cancel)"
+
+      - name: priority
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "优先级"
+
+      - name: move_type
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        default: "direct"
+        description: "移动类型 (direct/one)"
+
+      - name: scheduled_date
+        type: Timestamp
+        rust_type: "Option<chrono::DateTime<chrono::Utc>>"
+        nullable: true
+        description: "计划日期"
+
+      - name: date_deadline
+        type: Timestamp
+        rust_type: "Option<chrono::DateTime<chrono::Utc>>"
+        nullable: true
+        description: "截止日期"
+
+      - name: date_done
+        type: Timestamp
+        rust_type: "Option<chrono::DateTime<chrono::Utc>>"
+        nullable: true
+        description: "完成日期"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "源库位"
+        relation: stock.locations
+
+      - name: location_dest_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "目标库位"
+        relation: stock.locations
+
+      - name: picking_type_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "拣货类型"
+
+      - name: partner_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "合作伙伴"
+        relation: base.partners
+
+      - name: user_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "负责人"
+
+      - name: backorder_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "回退拣货单"
+        relation: stock.pickings
+
+      - name: return_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "退货关联"
+
+      - name: printed
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "已打印"
+
+      - name: is_locked
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否锁定"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockMove (库存移动) ──────────────────────────────────
+  - name: StockMove
+    table: stock.moves
+    aggregate_root: false
+    parent_entity: StockPicking
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockMove ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: sequence
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+        description: "排序"
+
+      - name: date
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "日期"
+
+      - name: product_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品"
+
+      - name: product_uom_qty
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        description: "需求数量"
+
+      - name: product_uom
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品计量单位"
+
+      - name: quantity
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "实际已转移数量"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "源库位"
+        relation: stock.locations
+
+      - name: location_dest_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "目标库位"
+        relation: stock.locations
+
+      - name: picking_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "所属拣货单"
+        relation: stock.pickings
+
+      - name: state
+        type: String
+        rust_type: "MoveState"
+        nullable: false
+        default: "draft"
+        description: "移动状态 (draft/waiting/confirmed/assigned/done/cancel)"
+
+      - name: picked
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否已拣选"
+
+      - name: price_unit
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "单价"
+
+      - name: origin
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "来源单据"
+
+      - name: picking_type_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "拣货类型"
+
+      - name: is_inventory
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否库存盘点移动"
+
+      - name: warehouse_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "仓库"
+        relation: stock.warehouses
+
+      - name: reference
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "参考"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockMoveLine (库存移动明细行) ──────────────────────────────────
+  - name: StockMoveLine
+    table: stock.move_lines
+    aggregate_root: false
+    parent_entity: StockMove
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockMoveLine ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: picking_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "所属拣货单"
+        relation: stock.pickings
+
+      - name: move_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "所属移动"
+        relation: stock.moves
+
+      - name: product_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品"
+
+      - name: product_uom_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品计量单位"
+
+      - name: quantity
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "完成数量"
+
+      - name: picked
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "已拣选"
+
+      - name: lot_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "批次号"
+        relation: stock.lots
+
+      - name: lot_name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "批次名称 (用于快速创建批次)"
+
+      - name: package_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "源包裹"
+
+      - name: result_package_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "目标包裹"
+
+      - name: date
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "日期"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "源库位"
+        relation: stock.locations
+
+      - name: location_dest_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "目标库位"
+        relation: stock.locations
+
+      - name: state
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "状态"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockQuant (库存量记录) ──────────────────────────────────
+  - name: StockQuant
+    table: stock.quants
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - Reserve
+      - Unreserve
+      - InventoryAdjustment
+
+    computed_fields:
+      - name: available_quantity
+        description: "可用数量 = quantity - reserved_quantity"
+        depends_on: ["quantity", "reserved_quantity"]
+
+    indexed_fields:
+      - product_id
+      - location_id
+      - lot_id
+      - tenant_id
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockQuant ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: product_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "库位"
+        relation: stock.locations
+
+      - name: lot_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "批次号"
+        relation: stock.lots
+
+      - name: package_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "包裹"
+
+      - name: owner_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "所有者"
+
+      - name: quantity
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "在手数量 (总量，包含预留)"
+
+      - name: reserved_quantity
+        type: Decimal
+        rust_type: "rust_decimal::Decimal"
+        nullable: false
+        default: "0"
+        description: "预留数量"
+
+      - name: in_date
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "入库日期"
+
+      - name: on_hand
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否在手 (quantity > 0)"
+
+      - name: inventory_quantity
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "盘点数量"
+
+      - name: inventory_diff_quantity
+        type: Decimal
+        rust_type: "Option<rust_decimal::Decimal>"
+        nullable: true
+        description: "盘点差异"
+
+      - name: inventory_quantity_set
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否已设置盘点数量"
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+  # ─── StockLot (批次/序列号) ──────────────────────────────────
+  - name: StockLot
+    table: stock.lots
+    aggregate_root: true
+    features:
+      soft_delete: false
+      optimistic_locking: true
+      tenant_aware: true
+      sync_support: true
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        primary_key: true
+        description: "StockLot ID"
+
+      - name: tenant_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "租户 ID"
+
+      - name: name
+        type: String
+        rust_type: "String"
+        nullable: false
+        description: "批次号/序列号名称"
+        searchable: true
+        search_operator: "ILIKE"
+
+      - name: ref_code
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "参考编号"
+
+      - name: product_id
+        type: Uuid
+        rust_type: "uuid::Uuid"
+        nullable: false
+        description: "产品"
+
+      - name: note
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+        description: "备注"
+
+      - name: lot_properties
+        type: Json
+        rust_type: "Option<serde_json::Value>"
+        nullable: true
+        description: "批次属性 (扩展 JSON)"
+
+      - name: location_id
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "当前所在库位"
+        relation: stock.locations
+
+      # ── 审计 ──
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "创建时间"
+
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+        default: "now"
+        description: "更新时间"
+
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "创建人"
+
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<uuid::Uuid>"
+        nullable: true
+        description: "更新人"
+
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+enums:
+  - name: PickingState
+    description: "拣货单状态"
+    state_machine: true
+    default: Draft
+    values:
+      - name: Draft
+        display: "草稿"
+        description: "可自由编辑"
+      - name: Waiting
+        display: "等待中"
+        description: "等待上游操作或库存"
+      - name: Ready
+        display: "就绪"
+        description: "库存已预留，可执行"
+      - name: Done
+        display: "已完成"
+        description: "终态"
+      - name: Cancel
+        display: "已取消"
+        description: "可重新打开回草稿"
+    transitions:
+      - from: Draft
+        to: [Waiting, Ready, Cancel]
+      - from: Waiting
+        to: [Ready, Cancel]
+      - from: Ready
+        to: [Done, Cancel]
+      - from: Done
+        to: []
+      - from: Cancel
+        to: [Draft]
+
+  - name: MoveState
+    description: "库存移动状态"
+    state_machine: false
+    values:
+      - name: Draft
+        display: "草稿"
+      - name: Waiting
+        display: "等待"
+      - name: Confirmed
+        display: "已确认"
+      - name: Assigned
+        display: "已分配"
+      - name: Done
+        display: "已完成"
+      - name: Cancel
+        display: "已取消"
+
+  - name: LocationUsage
+    description: "库位用途"
+    state_machine: false
+    values:
+      - name: Supplier
+        display: "供应商库位 (虚拟)"
+      - name: Customer
+        display: "客户库位 (虚拟)"
+      - name: Internal
+        display: "内部库位 (真实库存)"
+      - name: Production
+        display: "生产库位 (虚拟)"
+      - name: Transit
+        display: "中转库位"
+      - name: Inventory
+        display: "库存调整 (虚拟)"
+      - name: View
+        display: "视图 (仅分组)"
+
+  - name: PickingTypeCode
+    description: "拣货单类型代码"
+    state_machine: false
+    values:
+      - name: Incoming
+        display: "入库"
+      - name: Outgoing
+        display: "出库"
+      - name: Internal
+        display: "内部调拨"
+
+task_groups:
+  backend:
+    - domain_entity
+    - domain_repository
+    - infrastructure_repository
+    - application_command
+    - application_query
+    - application_dto
+    - application_service
+  proto:
+    - proto_service
+  frontend:
+    - flutter_list_page
+    - flutter_form_page

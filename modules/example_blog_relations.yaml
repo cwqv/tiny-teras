@@ -1,0 +1,172 @@
+# 外键关系配置示例
+# 演示如何在 YAML 中定义实体间的关系
+
+project: blog
+version: v1
+description: "博客系统 - 演示外键关系和 JOIN 查询生成"
+
+entities:
+  # 用户实体
+  - name: User
+    table_name: users
+    schema: public
+    description: "用户实体"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        primary_key: true
+        description: "用户 ID"
+
+      - name: email
+        type: Email
+        rust_type: shared_domain::value_objects::Email
+        nullable: false
+        unique: true
+        description: "邮箱"
+
+      - name: display_name
+        type: String
+        rust_type: String
+        nullable: true
+        description: "显示名称"
+
+  # 文章实体（many_to_one 关系示例）
+  - name: Post
+    table_name: posts
+    schema: public
+    description: "文章实体"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        primary_key: true
+        description: "文章 ID"
+
+      - name: title
+        type: String
+        rust_type: String
+        nullable: false
+        description: "标题"
+
+      - name: content
+        type: String
+        rust_type: String
+        nullable: false
+        description: "内容"
+
+      - name: author_id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        description: "作者 ID"
+        # 外键关系配置
+        foreign_key:
+          entity: User                    # 引用的实体
+          field: id                       # 引用的字段
+          on_delete: CASCADE              # 级联删除
+          on_update: CASCADE              # 级联更新
+          relation_type: many_to_one      # 多对一关系（多篇文章对应一个作者）
+          join_alias: author              # JOIN 时使用的别名
+          eager_load: true                # 是否预加载
+
+      - name: category_id
+        type: Uuid
+        rust_type: Uuid
+        nullable: true
+        description: "分类 ID"
+        foreign_key:
+          entity: Category
+          field: id
+          on_delete: SET NULL
+          on_update: CASCADE
+          relation_type: many_to_one
+          join_alias: category
+          eager_load: false
+
+  # 分类实体（one_to_many 关系示例）
+  - name: Category
+    table_name: categories
+    schema: public
+    description: "分类实体"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        primary_key: true
+        description: "分类 ID"
+
+      - name: name
+        type: String
+        rust_type: String
+        nullable: false
+        unique: true
+        description: "分类名称"
+
+  # 标签实体（many_to_many 关系示例）
+  - name: Tag
+    table_name: tags
+    schema: public
+    description: "标签实体"
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        primary_key: true
+        description: "标签 ID"
+
+      - name: name
+        type: String
+        rust_type: String
+        nullable: false
+        unique: true
+        description: "标签名称"
+
+  # 文章标签关联（演示多对多关系）
+  - name: PostTag
+    table_name: post_tags
+    schema: public
+    description: "文章标签关联实体（演示 many_to_many）"
+    fields:
+      - name: post_id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        description: "文章 ID"
+        foreign_key:
+          entity: Post
+          field: id
+          on_delete: CASCADE
+          on_update: CASCADE
+          relation_type: many_to_one
+
+      - name: tag_id
+        type: Uuid
+        rust_type: Uuid
+        nullable: false
+        description: "标签 ID"
+        foreign_key:
+          entity: Tag
+          field: id
+          on_delete: CASCADE
+          on_update: CASCADE
+          relation_type: many_to_one
+
+# 在 Post 实体中使用 many_to_many（需要添加虚拟字段）
+# 注意：这是一个更高级的用法示例
+# - name: Post
+#   fields:
+#     - name: tags
+#       type: Array
+#       rust_type: Vec<Tag>
+#       foreign_key:
+#         entity: Tag
+#         field: id
+#         relation_type: many_to_many
+#         junction_table: post_tags        # 中间表
+#         junction_source_field: post_id   # 中间表中指向 Post 的字段
+#         junction_target_field: tag_id    # 中间表中指向 Tag 的字段

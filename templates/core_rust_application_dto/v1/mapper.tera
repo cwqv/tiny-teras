@@ -1,0 +1,113 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use shared_domain::value_objects::Email;
+
+use crate::application::commands::create_{{ entity_snake }}_command::Create{{ entity_pascal }}Command;
+use crate::application::commands::update_{{ entity_snake }}_command::Update{{ entity_pascal }}Command;
+use crate::application::commands::delete_{{ entity_snake }}_command::Delete{{ entity_pascal }}Command;
+use crate::application::queries::get_{{ entity_snake }}_query::Get{{ entity_pascal }}Query;
+use crate::application::queries::list_{{ entity_snake }}s_query::List{{ entity_pascal }}sQuery;
+use crate::application::dto::{{ entity_snake }}_dto::{
+    Create{{ entity_pascal }}Dto, Update{{ entity_pascal }}Dto, Delete{{ entity_pascal }}Dto,
+    Get{{ entity_pascal }}Dto, List{{ entity_pascal }}sDto,
+};
+
+/// Mapper for converting DTOs to Commands/Queries for {{ entity.description | default(value=entity.name) }}
+pub struct {{ entity_pascal }}DtoMapper;
+
+impl {{ entity_pascal }}DtoMapper {
+    /// Convert Create{{ entity_pascal }}Dto to Create{{ entity_pascal }}Command
+    pub fn to_create_command(dto: Create{{ entity_pascal }}Dto) -> Result<Create{{ entity_pascal }}Command, String> {
+{% for field in entity.fields %}
+{% if  "Email" in field.rust_type  %}
+        let {{ field.name | snake_case }} = Email::new(&dto.{{ field.name | snake_case }})
+            .map_err(|e| format!("Invalid email: {}", e))?;
+
+{% break %}
+{% endif %}
+{% endfor %}
+        Ok(Create{{ entity_pascal }}Command::new(
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" %}
+{% continue %}
+{% endif %}
+            dto.{{ field.name | snake_case }},
+{% endif %}
+{% endfor %}
+        ))
+    }
+
+    /// Convert Update{{ entity_pascal }}Dto to Update{{ entity_pascal }}Command
+    pub fn to_update_command(dto: Update{{ entity_pascal }}Dto) -> Result<Update{{ entity_pascal }}Command, String> {
+        let mut command = Update{{ entity_pascal }}Command::new(
+            dto.{{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            dto.tenant_id
+{% endif %}
+        );
+
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "tenant_id" or field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" or field.name == "id" %}
+{% continue %}
+{% endif %}
+        if let Some({{ field.name | snake_case }}) = dto.{{ field.name | snake_case }} {
+{% if  "Email" in field.rust_type  %}
+            let email = Email::new(&{{ field.name | snake_case }})
+                .map_err(|e| format!("Invalid email: {}", e))?;
+            command = command.with_{{ field.name | snake_case }}(email);
+{% else %}
+            command = command.with_{{ field.name | snake_case }}({{ field.name | snake_case }});
+{% endif %}
+        }
+
+{% endif %}
+{% endfor %}
+        Ok(command)
+    }
+
+    /// Convert Delete{{ entity_pascal }}Dto to Delete{{ entity_pascal }}Command
+    pub fn to_delete_command(dto: Delete{{ entity_pascal }}Dto) -> Delete{{ entity_pascal }}Command {
+        Delete{{ entity_pascal }}Command::new(
+            dto.{{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            dto.tenant_id
+{% endif %}
+        )
+    }
+
+    /// Convert Get{{ entity_pascal }}Dto to Get{{ entity_pascal }}Query
+    pub fn to_get_query(dto: Get{{ entity_pascal }}Dto) -> Get{{ entity_pascal }}Query {
+        Get{{ entity_pascal }}Query::new(dto.{{ entity_snake }}_id)
+    }
+
+    /// Convert List{{ entity_pascal }}sDto to List{{ entity_pascal }}sQuery
+    pub fn to_list_query(dto: List{{ entity_pascal }}sDto) -> List{{ entity_pascal }}sQuery {
+        let mut query = List{{ entity_pascal }}sQuery::new();
+
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+        if let Some(tenant_id) = dto.tenant_id {
+            query = query.with_tenant_id(tenant_id);
+        }
+
+{% endif %}
+        if let Some(search_query) = dto.search_query {
+            query = query.with_search_query(search_query);
+        }
+
+        if let Some(limit) = dto.limit {
+            query = query.with_limit(limit);
+        }
+
+        if let Some(offset) = dto.offset {
+            query = query.with_offset(offset);
+        }
+
+        query
+    }
+}
+
+// <<< block:custom_mappers
+// 自定义映射方法（在此添加自定义的映射逻辑）
+// >>> end:custom_mappers

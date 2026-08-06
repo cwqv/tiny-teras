@@ -1,0 +1,180 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_presentation/shared_presentation.dart';
+
+import '../providers/{{ entity.name | snake_case }}_providers.dart';
+import '../../application/dto/user_dto.dart';
+import '../../domain/entities/{{ entity.name | snake_case }}.dart';
+import '{{ entity.name | snake_case }}_form_screen.dart';
+
+/// {{ entity.name }}列表页面
+class {{ entity.name }}ListScreen extends ConsumerStatefulWidget {
+{% if features.multi_tenant %}
+  final String tenantId;
+
+  const {{ entity.name }}ListScreen({
+    super.key,
+    required this.tenantId,
+  });
+{% else %}
+  const {{ entity.name }}ListScreen({super.key});
+{% endif %}
+
+  @override
+  ConsumerState<{{ entity.name }}ListScreen> createState() => _{{ entity.name }}ListScreenState();
+}
+
+class _{{ entity.name }}ListScreenState extends ConsumerState<{{ entity.name }}ListScreen> {
+  String? _searchQuery;
+{% if features.search %}
+  final TextEditingController _searchController = TextEditingController();
+
+{% endif %}
+  @override
+  void dispose() {
+{% if features.search %}
+    _searchController.dispose();
+{% endif %}
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dto = List{{ entity.name }}sDto(
+{% if features.multi_tenant %}
+      tenantId: widget.tenantId,
+{% endif %}
+{% if features.search %}
+      searchQuery: _searchQuery,
+{% endif %}
+    );
+
+    final listAsync = ref.watch({{ entity.name | snake_case }}ListProvider(dto));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('{{ entity.name }}列表'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => {{ entity.name }}FormScreen(
+{% if features.multi_tenant %}
+                    tenantId: widget.tenantId,
+{% endif %}
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+{% if features.search %}
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                labelText: '搜索',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.isEmpty ? null : value;
+                });
+              },
+            ),
+          ),
+{% endif %}
+          Expanded(
+            child: listAsync.when(
+              data: (entities) {
+                if (entities.isEmpty) {
+                  return const Center(
+                    child: Text('暂无数据'),
+                  );
+                }
+
+                return ListView.builder(
+                  itemCount: entities.length,
+                  itemBuilder: (context, index) {
+                    final entity = entities[index];
+                    return ListTile(
+                      title: Text(entity.{% for field in entity.fields %}{% if field.type == "Email" %}{{ field.name }}{% endif %}{% endfor %}),
+                      subtitle: Text('ID: ${entity.id}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => {{ entity.name }}FormScreen(
+{% if features.multi_tenant %}
+                                    tenantId: widget.tenantId,
+{% endif %}
+                                    entity: entity,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('确认删除'),
+                                  content: const Text('确定要删除此项吗？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('取消'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(true),
+                                      child: const Text('删除'),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirmed == true) {
+                                final deleteDto = Delete{{ entity.name }}Dto(
+{% if features.multi_tenant %}
+                                  tenantId: widget.tenantId,
+{% endif %}
+                                  {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}: entity.id,{% endif %}{% endfor %}
+                                );
+
+                                ref.read(delete{{ entity.name }}Provider(deleteDto).future);
+                                ref.invalidate({{ entity.name | snake_case }}ListProvider(dto));
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(),
+              ),
+              error: (error, stackTrace) => Center(
+                child: Text('错误: $error'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,543 @@
+import 'package:shared_application/shared_application.dart';
+
+import '../../domain/entities/{{ entity.name | snake_case }}.dart';
+import '../../domain/repositories/{{ entity.name | snake_case }}_repository.dart';
+import '../dto/{{ entity.name | snake_case }}_dto.dart';
+
+{%- if entity.service_methods is defined and entity.service_methods | length > 0 %}
+{# 使用 service_methods 循环生成 UseCase 类 #}
+{%- for method in entity.service_methods %}
+{%- if method.name == "Get" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<Get{{ entity.name }}Dto, {{ entity.name }}, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<{{ entity.name }}, Failure>> execute(Get{{ entity.name }}Dto input) async {
+    try {
+{%- if entity.dto_fields.get is defined %}
+      final result = await _repository.findById(
+{%- for field in entity.dto_fields.get %}
+  {%- if field.name is defined %}
+    {%- if field.primary_key %}
+        {{ field.name }}: input.{{ field.name }},
+    {%- endif %}
+  {%- else %}
+    {%- if field == "id" %}
+        id: input.id,
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+      );
+{%- else %}
+      // TODO: 配置 dto_fields.get 以生成正确的查询逻辑
+      throw UnimplementedError('Get{{ entity.name }}Dto fields not configured');
+{%- endif %}
+
+      return result.fold(
+        (entity) {
+          if (entity == null) {
+            return FailureResult(NotFoundFailure(
+              message: '{{ entity.name }}未找到',
+              code: '{{ entity.name | upper }}_NOT_FOUND',
+            ));
+          }
+          return Success(entity);
+        },
+        (failure) => FailureResult(failure),
+      );
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '获取{{ entity.name }}时发生错误: $e',
+        code: 'GET_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "List" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<List{{ entity.name }}sDto, List<{{ entity.name }}>, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<List<{{ entity.name }}>, Failure>> execute(List{{ entity.name }}sDto input) async {
+    try {
+{%- if features.search %}
+      final result = await _repository.search(
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+{%- if entity.dto_fields.list is defined %}
+{%- for field in entity.dto_fields.list %}
+  {%- if field.name is defined %}
+    {%- if field.name == "search_query" %}
+        searchQuery: input.searchQuery,
+    {%- elif field.name == "roles" %}
+        roles: input.roles,
+    {%- elif field.name == "is_active" %}
+        isActive: input.isActive,
+    {%- elif field.name == "limit" %}
+        limit: input.limit,
+    {%- elif field.name == "offset" %}
+        offset: input.offset,
+    {%- endif %}
+  {%- else %}
+    {%- if field == "search_query" %}
+        searchQuery: input.searchQuery,
+    {%- elif field == "roles" %}
+        roles: input.roles,
+    {%- elif field == "is_active" %}
+        isActive: input.isActive,
+    {%- elif field == "limit" %}
+        limit: input.limit,
+    {%- elif field == "offset" %}
+        offset: input.offset,
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+{%- endif %}
+      );
+{%- else %}
+{%- if features.multi_tenant %}
+      final result = await _repository.listByTenant(
+        tenantId: input.tenantId!,
+      );
+{%- else %}
+      final result = await _repository.listAll();
+{%- endif %}
+{%- endif %}
+      
+      return result.fold(
+        (entities) => Success(entities),
+        (failure) => FailureResult(failure),
+      );
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '列出{{ entity.name }}时发生错误: $e',
+        code: 'LIST_{{ entity.name | upper }}S_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "GetPaged" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<Get{{ entity.name }}sPagedDto, PagedResult<{{ entity.name }}>, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<PagedResult<{{ entity.name }}>, Failure>> execute(Get{{ entity.name }}sPagedDto input) async {
+    try {
+      // TODO: 实现分页查询逻辑
+      throw UnimplementedError('GetPaged use case not yet implemented');
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '分页获取{{ entity.name }}时发生错误: $e',
+        code: 'GET_{{ entity.name | upper }}S_PAGED_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Create" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<Create{{ entity.name }}Dto, Created{{ entity.name }}Dto, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<Created{{ entity.name }}Dto, Failure>> execute(Create{{ entity.name }}Dto input) async {
+    try {
+{%- if entity.dto_fields.create is defined and entity.dto_fields.create | length > 0 %}
+      // 验证输入
+{%- for field in entity.dto_fields.create %}
+  {%- if field.name is defined %}
+    {%- if field.type == "Email" %}
+      if (input.{{ field.name }} == null || input.{{ field.name }}!.isEmpty) {
+        return FailureResult(ValidationFailure(
+          message: '邮箱不能为空',
+          code: 'EMAIL_REQUIRED',
+        ));
+      }
+    {%- elif field.name == "password" %}
+      if (input.{{ field.name }} == null || input.{{ field.name }}!.length < 8) {
+        return FailureResult(ValidationFailure(
+          message: '密码长度至少8位',
+          code: 'PASSWORD_TOO_SHORT',
+        ));
+      }
+    {%- endif %}
+  {%- else %}
+    {%- if field == "email" %}
+      if (input.email == null || input.email!.isEmpty) {
+        return FailureResult(ValidationFailure(
+          message: '邮箱不能为空',
+          code: 'EMAIL_REQUIRED',
+        ));
+      }
+    {%- elif field == "password" %}
+      if (input.password == null || input.password!.length < 8) {
+        return FailureResult(ValidationFailure(
+          message: '密码长度至少8位',
+          code: 'PASSWORD_TOO_SHORT',
+        ));
+      }
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+
+      // 创建{{ entity.name }}实体
+      final {{ entity.name | snake_case }} = {{ entity.name }}(
+        id: '', // 将由服务器生成
+        createdAt: DateTime.now().toUtc(),
+        updatedAt: DateTime.now().toUtc(),
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId!,
+{%- endif %}
+{%- for field in entity.dto_fields.create %}
+  {%- if field.name is defined %}
+    {%- if field.name != "tenant_id" and field.name != "password" %}
+        {{ field.name }}: input.{{ field.name }}{% if field.type == "Email" %}!{% endif %},
+    {%- elif field.name == "password" %}
+        // password_hash 将由服务器处理
+    {%- endif %}
+  {%- else %}
+    {%- if field != "tenant_id" and field != "password" %}
+        // {{ field }}: input.{{ field }},
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+      );
+
+      // 保存到仓储
+      final result = await _repository.upsert({{ entity.name | snake_case }});
+      
+      return result.fold(
+        (entity) => Success(Created{{ entity.name }}Dto(
+{%- for field in entity.fields %}
+  {%- if field.primary_key %}
+          {{ field.name }}: entity.id,
+  {%- endif %}
+{%- endfor %}
+{%- if features.multi_tenant %}
+          tenantId: entity.tenantId!,
+{%- endif %}
+        )),
+        (failure) => FailureResult(failure),
+      );
+{%- else %}
+      // TODO: 配置 dto_fields.create 以生成正确的创建逻辑
+      throw UnimplementedError('Create{{ entity.name }}Dto fields not configured');
+{%- endif %}
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '创建{{ entity.name }}时发生错误: $e',
+        code: 'CREATE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Update" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<Update{{ entity.name }}Dto, {{ entity.name }}, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<{{ entity.name }}, Failure>> execute(Update{{ entity.name }}Dto input) async {
+    try {
+{%- if entity.dto_fields.update is defined and entity.dto_fields.update | length > 0 %}
+      // 获取现有{{ entity.name }}
+{%- for field in entity.dto_fields.update %}
+  {%- if field.name is defined %}
+    {%- if field.primary_key %}
+      final getResult = await _repository.findById(
+        {{ field.name }}: input.{{ field.name }}!,
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId!,
+{%- endif %}
+      );
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(NotFoundFailure(
+          message: '{{ entity.name }}未找到',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+{%- if features.multi_tenant %}
+      // 验证租户匹配
+      if (existingEntity.tenantId != input.tenantId) {
+        return FailureResult(AuthorizationFailure(
+          message: '{{ entity.name }}不属于该租户',
+          code: 'TENANT_MISMATCH',
+        ));
+      }
+
+{%- endif %}
+      // 更新字段
+      var updatedEntity = existingEntity.copyWith(
+{%- for update_field in entity.dto_fields.update %}
+  {%- if update_field.name is defined %}
+    {%- if not update_field.primary_key %}
+        {{ update_field.name }}: input.{{ update_field.name }},
+    {%- endif %}
+  {%- else %}
+    {%- if update_field != "id" and update_field != "tenant_id" and update_field != "password" %}
+        {{ update_field }}: input.{{ update_field }},
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+        updatedAt: DateTime.now().toUtc(),
+      );
+
+      // 保存更新
+      final updateResult = await _repository.update(updatedEntity);
+      
+      return updateResult.fold(
+        (entity) => Success(entity),
+        (failure) => FailureResult(failure),
+      );
+    {%- endif %}
+  {%- else %}
+    {%- if field == "id" %}
+      final getResult = await _repository.findById(
+        id: input.id!,
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId!,
+{%- endif %}
+      );
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(NotFoundFailure(
+          message: '{{ entity.name }}未找到',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+      // 更新字段
+      var updatedEntity = existingEntity.copyWith(
+{%- for update_field in entity.dto_fields.update %}
+  {%- if update_field != "id" and update_field != "tenant_id" and update_field != "password" %}
+        {{ update_field }}: input.{{ update_field }},
+  {%- endif %}
+{%- endfor %}
+        updatedAt: DateTime.now().toUtc(),
+      );
+
+      // 保存更新
+      final updateResult = await _repository.update(updatedEntity);
+      
+      return updateResult.fold(
+        (entity) => Success(entity),
+        (failure) => FailureResult(failure),
+      );
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+{%- else %}
+      // TODO: 配置 dto_fields.update 以生成正确的更新逻辑
+      throw UnimplementedError('Update{{ entity.name }}Dto fields not configured');
+{%- endif %}
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '更新{{ entity.name }}时发生错误: $e',
+        code: 'UPDATE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Delete" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<Delete{{ entity.name }}Dto, void, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<void, Failure>> execute(Delete{{ entity.name }}Dto input) async {
+    try {
+{%- if entity.dto_fields.delete is defined and entity.dto_fields.delete | length > 0 %}
+      // 验证{{ entity.name }}存在{% if features.multi_tenant %}且属于该租户{% endif %}
+{%- for field in entity.dto_fields.delete %}
+  {%- if field.name is defined %}
+    {%- if field.primary_key %}
+      final getResult = await _repository.findById(
+        {{ field.name }}: input.{{ field.name }},
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+      );
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(NotFoundFailure(
+          message: '{{ entity.name }}未找到',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+{%- if features.multi_tenant %}
+      // 验证租户匹配
+      if (existingEntity.tenantId != input.tenantId) {
+        return FailureResult(AuthorizationFailure(
+          message: '{{ entity.name }}不属于该租户',
+          code: 'TENANT_MISMATCH',
+        ));
+      }
+
+{%- endif %}
+      // 执行{% if features.soft_delete %}软{% endif %}删除
+      final deleteResult = await _repository.delete(
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+{%- for delete_field in entity.dto_fields.delete %}
+  {%- if delete_field.name is defined %}
+    {%- if delete_field.primary_key %}
+        {{ delete_field.name }}: input.{{ delete_field.name }},
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+      );
+      
+      return deleteResult.fold(
+        (_) => const Success(null),
+        (failure) => FailureResult(failure),
+      );
+    {%- endif %}
+  {%- else %}
+    {%- if field == "id" %}
+      final getResult = await _repository.findById(
+        id: input.id,
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+      );
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(NotFoundFailure(
+          message: '{{ entity.name }}未找到',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+      // 执行删除
+      final deleteResult = await _repository.delete(
+{%- if features.multi_tenant %}
+        tenantId: input.tenantId,
+{%- endif %}
+        id: input.id,
+      );
+      
+      return deleteResult.fold(
+        (_) => const Success(null),
+        (failure) => FailureResult(failure),
+      );
+    {%- endif %}
+  {%- endif %}
+{%- endfor %}
+{%- else %}
+      // TODO: 配置 dto_fields.delete 以生成正确的删除逻辑
+      throw UnimplementedError('Delete{{ entity.name }}Dto fields not configured');
+{%- endif %}
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '删除{{ entity.name }}时发生错误: $e',
+        code: 'DELETE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "BatchDelete" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例
+class {{ method.use_case_class }} extends AsyncUseCase<BatchDelete{{ entity.name }}sDto, void, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<void, Failure>> execute(BatchDelete{{ entity.name }}sDto input) async {
+    try {
+      // TODO: 实现批量删除逻辑
+      throw UnimplementedError('BatchDelete use case not yet implemented');
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '批量删除{{ entity.name }}时发生错误: $e',
+        code: 'BATCH_DELETE_{{ entity.name | upper }}S_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- endif %}
+{%- endfor %}
+{%- else %}
+{# 向后兼容：如果没有 service_methods，使用默认 CRUD 方法 #}
+{%- if entity.dto_fields.create is defined and entity.dto_fields.create | length > 0 %}
+// ============ Create{{ entity.name }}UseCase ============
+// TODO: 使用 service_methods 配置替代 dto_fields
+{%- endif %}
+{%- if entity.dto_fields.get is defined and entity.dto_fields.get | length > 0 %}
+// ============ Get{{ entity.name }}UseCase ============
+// TODO: 使用 service_methods 配置替代 dto_fields
+{%- endif %}
+{%- if entity.dto_fields.list is defined and entity.dto_fields.list | length > 0 %}
+// ============ List{{ entity.name }}sUseCase ============
+// TODO: 使用 service_methods 配置替代 dto_fields
+{%- endif %}
+{%- if entity.dto_fields.update is defined and entity.dto_fields.update | length > 0 %}
+// ============ Update{{ entity.name }}UseCase ============
+// TODO: 使用 service_methods 配置替代 dto_fields
+{%- endif %}
+{%- if entity.dto_fields.delete is defined and entity.dto_fields.delete | length > 0 %}
+// ============ Delete{{ entity.name }}UseCase ============
+// TODO: 使用 service_methods 配置替代 dto_fields
+{%- endif %}
+{%- endif %}

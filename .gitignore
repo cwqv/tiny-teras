@@ -1,0 +1,10 @@
+# 生成产物（不提交）
+generated/
+backups/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

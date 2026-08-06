@@ -1,0 +1,79 @@
+# UM 模块 - Rust Application 层代码生成任务
+# 用于生成 CQRS 风格的应用层代码
+
+module: um
+description: "UM 模块 Rust Application 层代码生成"
+
+# 任务列表
+tasks:
+  # ==================== DTO 层 ====================
+  - name: application_dto
+    description: "生成 Application DTO"
+    template: core_rust_application_dto/v1/dto_complete.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/dto/{{ entity.name | snake_case }}_dto.rs"
+    enabled: true
+
+  - name: application_dto_mapper
+    description: "生成 DTO Mapper"
+    template: core_rust_application_dto/v1/mapper.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/mappers/{{ entity.name | snake_case }}_dto_mapper.rs"
+    enabled: true
+
+  # ==================== Command 层 ====================
+  - name: create_command
+    description: "生成 Create Command"
+    template: core_rust_application_command/v1/create_command.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/commands/create_{{ entity.name | snake_case }}_command.rs"
+    enabled: true
+
+  - name: update_command
+    description: "生成 Update Command"
+    template: core_rust_application_command/v1/update_command.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/commands/update_{{ entity.name | snake_case }}_command.rs"
+    enabled: true
+
+  - name: delete_command
+    description: "生成 Delete Command"
+    template: core_rust_application_command/v1/delete_command.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/commands/delete_{{ entity.name | snake_case }}_command.rs"
+    enabled: true
+
+  # ==================== Query 层 ====================
+  - name: get_query
+    description: "生成 Get Query"
+    template: core_rust_application_query/v1/get_query.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/queries/get_{{ entity.name | snake_case }}_query.rs"
+    enabled: true
+
+  - name: list_query
+    description: "生成 List Query"
+    template: core_rust_application_query/v1/list_query.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/queries/list_{{ entity.name | snake_case }}s_query.rs"
+    enabled: true
+
+  # ==================== Command Handler 层 ====================
+  - name: create_command_handler
+    description: "生成 Create Command Handler"
+    template: core_rust_application_command_handler/v1/create_handler.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/handlers/create_{{ entity.name | snake_case }}_command_handler.rs"
+    enabled: true
+
+  # ==================== Query Handler 层 ====================
+  - name: get_query_handler
+    description: "生成 Get Query Handler"
+    template: core_rust_application_query_handler/v1/get_handler.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/handlers/get_{{ entity.name | snake_case }}_query_handler.rs"
+    enabled: true
+
+  - name: list_query_handler
+    description: "生成 List Query Handler"
+    template: core_rust_application_query_handler/v1/list_handler.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/handlers/list_{{ entity.name | snake_case }}s_query_handler.rs"
+    enabled: true
+
+  # ==================== Service 层 ====================
+  - name: application_service
+    description: "生成 Application Service"
+    template: core_rust_application_service/v1/service_complete.tera
+    output_pattern: "core_rust/crates/sys/{{ module }}/src/application/services/{{ entity.name | snake_case }}_service.rs"
+    enabled: true

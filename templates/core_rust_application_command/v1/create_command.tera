@@ -1,0 +1,79 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use uuid::Uuid;
+use serde::{Deserialize, Serialize};
+{% for field in entity.fields %}
+{% if  "Email" in field.rust_type  %}
+use shared_domain::value_objects::Email;
+{% break %}
+{% endif %}
+{% endfor %}
+
+/// Create {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Create{{ entity_pascal }}Command {
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" %}
+{% continue %}
+{% endif %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name | snake_case }}: {{ field.rust_type }},
+{% endif %}
+{% endfor %}
+}
+
+impl Create{{ entity_pascal }}Command {
+    pub fn new(
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" %}
+{% continue %}
+{% endif %}
+        {{ field.name | snake_case }}: {{ field.rust_type }},
+{% endif %}
+{% endfor %}
+    ) -> Self {
+        Self {
+{% for field in entity.fields %}
+{% if not field.primary_key and not field.name in entity.hidden_fields %}
+{% if field.name == "created_at" or field.name == "updated_at" or field.name == "created_by" or field.name == "updated_by" %}
+{% continue %}
+{% endif %}
+            {{ field.name | snake_case }},
+{% endif %}
+{% endfor %}
+        }
+    }
+}
+
+/// Result of create {{ entity.description | default(value=entity.name) }} command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Create{{ entity_pascal }}Result {
+    /// Created {{ entity.name }} ID
+    pub {{ entity_snake }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// Tenant ID
+    pub tenant_id: String,
+{% endif %}
+}
+
+impl Create{{ entity_pascal }}Result {
+    pub fn new(
+        {{ entity_snake }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+        tenant_id: String,
+{% endif %}
+    ) -> Self {
+        Self {
+            {{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            tenant_id,
+{% endif %}
+        }
+    }
+}
+
+// <<< block:custom_command_methods
+// 自定义命令方法（在此添加自定义的命令逻辑）
+// >>> end:custom_command_methods

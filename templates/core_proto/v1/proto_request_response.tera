@@ -1,0 +1,196 @@
+syntax = "proto3";
+
+package {{ task.proto_package }};
+
+import "{{ task.proto_import_path }}/{{ entity.name | snake_case }}_message.proto";
+import "tinydev/v1/sys/common.proto";
+{%- if entity.proto_imports %}
+{%- for import in entity.proto_imports %}
+import "{{ import }}";
+{%- endfor %}
+{%- endif %}
+
+{#- 
+  Proto Request/Response Template
+  Generates request and response messages for gRPC services
+  Supports CRUD operations (Get, List, Create, Update, Delete, BatchDelete)
+-#}
+{%- set entity_name_lower = entity.name | lower -%}
+
+// ============ Get{{ entity.name }}Request ============
+
+message Get{{ entity.name }}Request {
+  string id = 1;
+{%- if entity.multi_tenant %}
+  string tenant_id = 2;
+{%- endif %}
+}
+
+// ============ Get{{ entity.name }}Response ============
+
+message Get{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ List{{ entity.name }}sRequest ============
+
+message List{{ entity.name }}sRequest {
+{%- set start_num = 1 -%}
+{%- if entity.multi_tenant %}
+  string tenant_id = {{ start_num }};
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+{%- if entity.searchable_fields is defined and entity.searchable_fields | length > 0 %}
+  string search_query = {{ start_num }};  // Search across: {{ entity.searchable_fields | join(sep=", ") }}
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+{%- for field in entity.fields %}
+  {%- if field.searchable and field.name != 'tenant_id' and field.name != 'id' %}
+  {{ field.proto_type }} {{ field.name }} = {{ start_num + loop.index0 }};  // Filter by {{ field.description | default(value=field.name) }}
+  {%- endif %}
+{%- endfor %}
+}
+
+// ============ List{{ entity.name }}sResponse ============
+
+message List{{ entity.name }}sResponse {
+  repeated {{ entity.name }} {{ entity_name_lower }}s = 1;
+}
+
+// ============ Get{{ entity.name }}sPagedRequest ============
+
+message Get{{ entity.name }}sPagedRequest {
+{%- set start_num = 1 -%}
+{%- if entity.multi_tenant %}
+  string tenant_id = {{ start_num }};
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+{%- if entity.searchable_fields is defined and entity.searchable_fields | length > 0 %}
+  string search_query = {{ start_num }};
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+
+{%- set searchable_count = 0 -%}
+{%- for field in entity.fields %}
+  {%- if field.searchable and field.name != 'tenant_id' and field.name != 'id' %}
+  {{ field.proto_type }} {{ field.name }} = {{ start_num + loop.index0 }};
+  {%- set_global searchable_count = loop.index -%}
+  {%- endif %}
+{%- endfor %}
+
+{%- set page_start = start_num + searchable_count %}
+  int32 page = {{ page_start }};
+  int32 page_size = {{ page_start + 1 }};
+  string sort_by = {{ page_start + 2 }};
+  bool sort_ascending = {{ page_start + 3 }};
+}
+
+// ============ Get{{ entity.name }}sPagedResponse ============
+
+message Get{{ entity.name }}sPagedResponse {
+  repeated {{ entity.name }} {{ entity_name_lower }}s = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// ============ Create{{ entity.name }}Request ============
+
+message Create{{ entity.name }}Request {
+{%- set start_num = 1 -%}
+{%- if entity.multi_tenant %}
+  string tenant_id = {{ start_num }};
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+
+{%- set valid_fields = [] -%}
+{%- for field in entity.fields -%}
+  {%- set is_auto_generated = field.primary_key or field.name == "created_at" or field.name == "updated_at" or field.name == "version" -%}
+  {%- set is_hidden = false -%}
+  {%- if entity.hidden_fields is defined -%}
+    {%- for hidden_field in entity.hidden_fields -%}
+      {%- if field.name == hidden_field -%}
+        {%- set is_hidden = true -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- if not is_auto_generated and not is_hidden and field.name != "tenant_id" -%}
+    {%- set_global valid_fields = valid_fields | concat(with=field) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- for field in valid_fields %}
+  {{ field.proto_type }} {{ field.name }} = {{ start_num + loop.index0 }};
+{%- endfor %}
+}
+
+// ============ Create{{ entity.name }}Response ============
+
+message Create{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ Update{{ entity.name }}Request ============
+
+message Update{{ entity.name }}Request {
+  string id = 1;
+{%- set start_num = 2 -%}
+{%- if entity.multi_tenant %}
+  string tenant_id = {{ start_num }};
+  {%- set start_num = start_num + 1 -%}
+{%- endif %}
+
+{%- set valid_fields = [] -%}
+{%- for field in entity.fields -%}
+  {%- set is_immutable = field.primary_key or field.name == "created_at" or field.name == "version" -%}
+  {%- set is_hidden = false -%}
+  {%- if entity.hidden_fields is defined -%}
+    {%- for hidden_field in entity.hidden_fields -%}
+      {%- if field.name == hidden_field -%}
+        {%- set is_hidden = true -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- if not is_immutable and not is_hidden and field.name != "tenant_id" and field.name != "updated_at" -%}
+    {%- set_global valid_fields = valid_fields | concat(with=field) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- for field in valid_fields %}
+  {{ field.proto_type }} {{ field.name }} = {{ start_num + loop.index0 }};
+{%- endfor %}
+}
+
+// ============ Update{{ entity.name }}Response ============
+
+message Update{{ entity.name }}Response {
+  {{ entity.name }} {{ entity_name_lower }} = 1;
+}
+
+// ============ Delete{{ entity.name }}Request ============
+
+message Delete{{ entity.name }}Request {
+  string id = 1;
+{%- if entity.multi_tenant %}
+  string tenant_id = 2;
+{%- endif %}
+}
+
+// ============ Delete{{ entity.name }}Response ============
+
+// Empty response (uses common Empty message)
+
+// ============ BatchDelete{{ entity.name }}sRequest ============
+
+message BatchDelete{{ entity.name }}sRequest {
+  repeated string ids = 1;
+{%- if entity.multi_tenant %}
+  string tenant_id = 2;
+{%- endif %}
+}
+
+// ============ BatchDelete{{ entity.name }}sResponse ============
+
+message BatchDelete{{ entity.name }}sResponse {
+  int32 deleted_count = 1;
+}

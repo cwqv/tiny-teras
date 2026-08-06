@@ -1,0 +1,4 @@
+//! {{ entity.name }}表现层Screens
+
+export '{{ entity.name | snake_case }}_list_screen.dart';
+export '{{ entity.name | snake_case }}_form_screen.dart';

@@ -1,0 +1,122 @@
+import 'package:shared_application/core/usecase.dart';
+import 'package:shared_domain/shared_domain.dart';
+{%- for field in command_fields %}
+{%- if field.type == "Email" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/email.dart';
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/{{ field.name | snake_case }}.dart';
+{%- endif %}
+{%- endfor %}
+
+/// Command for {{ command_description }}
+class {{ command_name }}Command implements Command {
+{%- for field in command_fields %}
+{%- if field.name == "context" %}
+  @override
+  final ExecutionContext context;
+{%- elif field.type == "Email" %}
+  final Email {{ field.name }};
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+  final {{ field.name | pascal_case }} {{ field.name }};
+{%- else %}
+  final {{ field.flutter_type | default(value="String") }}{% if field.nullable %}?{% endif %} {{ field.name }};
+{%- endif %}
+{%- endfor %}
+
+  const {{ command_name }}Command({
+{%- for field in command_fields %}
+{%- if field.name != "context" %}
+    required this.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+    required this.context,
+  });
+
+  @override
+  String get commandId => context.correlationId ?? '{{ command_name | lower }}-{{ entity.name | lower }}-${DateTime.now().millisecondsSinceEpoch}';
+  
+  @override
+  String get commandType => '{{ command_name }}';
+  
+  @override
+  Map<String, dynamic> get data => {
+{%- for field in command_fields %}
+{%- if field.name != "context" %}
+{%- if field.type == "Email" or (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+    '{{ field.name }}': {{ field.name }}.value,
+{%- else %}
+    '{{ field.name }}': {{ field.name }},
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+  };
+
+  /// Validate the command
+  void validate() {
+    final errors = <ValidationError>[];
+    
+{%- for field in command_fields %}
+{%- if field.name != "context" %}
+{%- if field.name == "password" %}
+    if (password.isEmpty) {
+      errors.add(const ValidationError(
+        field: 'password',
+        message: 'Password cannot be empty',
+        code: 'PASSWORD_EMPTY',
+      ));
+    } else if (password.length < 8) {
+      errors.add(ValidationError(
+        field: 'password',
+        message: 'Password must be at least 8 characters long',
+        code: 'PASSWORD_TOO_SHORT',
+        rejectedValue: password.length,
+      ));
+    } else {
+      // Check password complexity
+      final hasLetter = RegExp(r'[a-zA-Z]').hasMatch(password);
+      final hasNumber = RegExp(r'[0-9]').hasMatch(password);
+
+      if (!hasLetter || !hasNumber) {
+        errors.add(const ValidationError(
+          field: 'password',
+          message: 'Password must contain at least one letter and one number',
+          code: 'PASSWORD_COMPLEXITY',
+        ));
+      }
+    }
+{%- elif field.type == "Email" %}
+    // Email validation is handled by Email value object
+{%- elif not field.nullable %}
+    if ({{ field.name }} == null{% if field.type != "Email" and (field.name != "user_id" and field.name != "tenant_id" and field.name != "created_by" and field.name != "updated_by") %} || {{ field.name }}!.isEmpty{% endif %}) {
+      errors.add(ValidationError(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value=field.name) }}不能为空',
+        code: '{{ field.name | upper }}_REQUIRED',
+        rejectedValue: {{ field.name }},
+      ));
+    }
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+    
+    if (errors.isNotEmpty) {
+      throw ValidationException.multiple(errors);
+    }
+  }
+
+  @override
+  String toString() {
+    return '{{ command_name }}Command{'
+{%- for field in command_fields %}
+{%- if field.name != "context" %}
+{%- if field.type == "Email" or (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+        '{{ field.name }}: ${ {{ field.name }}.value }, '
+{%- else %}
+        '{{ field.name }}: ${{ field.name }}, '
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+        '}';
+  }
+}
+

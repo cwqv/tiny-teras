@@ -1,0 +1,3 @@
+workspace module: {{ entity.name }}
+module id: {{ task_name }}
+target path: {{ path | default(value="workspace/task") }}

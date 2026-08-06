@@ -1,0 +1,65 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+/// List {{ entity.description | default(value=entity.name) }}s Query
+#[derive(Debug, Clone)]
+pub struct List{{ entity_pascal }}sQuery {
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// Tenant ID filter (optional)
+    pub tenant_id: Option<String>,
+{% endif %}
+    /// Search keyword (optional)
+    pub search_query: Option<String>,
+    /// Limit
+    pub limit: Option<usize>,
+    /// Offset
+    pub offset: Option<usize>,
+}
+
+impl List{{ entity_pascal }}sQuery {
+    pub fn new() -> Self {
+        Self {
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            tenant_id: None,
+{% endif %}
+            search_query: None,
+            limit: None,
+            offset: None,
+        }
+    }
+
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// Set tenant ID filter
+    pub fn with_tenant_id(mut self, tenant_id: String) -> Self {
+        self.tenant_id = Some(tenant_id);
+        self
+    }
+
+{% endif %}
+    /// Set search query
+    pub fn with_search_query(mut self, search_query: String) -> Self {
+        self.search_query = Some(search_query);
+        self
+    }
+
+    /// Set limit
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set offset
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+}
+
+impl Default for List{{ entity_pascal }}sQuery {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// <<< block:custom_list_query_methods
+// 自定义列表查询方法（在此添加自定义的查询逻辑）
+// >>> end:custom_list_query_methods

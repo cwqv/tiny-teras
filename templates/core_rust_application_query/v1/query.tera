@@ -1,0 +1,141 @@
+{%- if method.name == "Get" %}
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use uuid::Uuid;
+
+/// Query for getting a {{ entity.name | snake_case }} by ID
+#[derive(Debug, Clone)]
+pub struct Get{{ entity.name }}Query {
+    pub {{ entity.name | snake_case }}_id: Uuid,
+{%- if features.multi_tenant %}
+    pub tenant_id: Option<String>,
+{%- endif %}
+}
+
+impl Get{{ entity.name }}Query {
+    pub fn new({{ entity.name | snake_case }}_id: Uuid{% if features.multi_tenant %}, tenant_id: Option<String>{% endif %}) -> Self {
+        Self {
+            {{ entity.name | snake_case }}_id,
+{%- if features.multi_tenant %}
+            tenant_id,
+{%- endif %}
+        }
+    }
+}
+
+/// Result of get {{ entity.name | snake_case }} query
+#[derive(Debug, Clone)]
+pub struct Get{{ entity.name }}Result {
+    pub {{ entity.name | snake_case }}: Option<{{ entity.name }}>,
+}
+
+impl Get{{ entity.name }}Result {
+    pub fn new({{ entity.name | snake_case }}: Option<{{ entity.name }}>) -> Self {
+        Self { {{ entity.name | snake_case }} }
+    }
+}
+
+{%- elif method.name == "List" %}
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+
+/// Query for listing {{ entity.name | snake_case }}s
+#[derive(Debug, Clone)]
+pub struct List{{ entity.name }}sQuery {
+{%- if features.multi_tenant %}
+    pub tenant_id: Option<String>,
+{%- endif %}
+{%- if features.search %}
+    pub search_query: Option<String>,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if field.name == "roles" or field.name == "role" %}
+    pub {{ field.name }}: Option<Vec<String>>,
+{%- elif field.name == "is_active" or field.name == "status" %}
+    pub {{ field.name }}: Option<{{ field.type }}>,
+{%- endif %}
+{%- endfor %}
+{%- if features.pagination %}
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+{%- endif %}
+}
+
+impl List{{ entity.name }}sQuery {
+    pub fn new() -> Self {
+        Self {
+{%- if features.multi_tenant %}
+            tenant_id: None,
+{%- endif %}
+{%- if features.search %}
+            search_query: None,
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if field.name == "roles" or field.name == "role" %}
+            {{ field.name }}: None,
+{%- elif field.name == "is_active" or field.name == "status" %}
+            {{ field.name }}: None,
+{%- endif %}
+{%- endfor %}
+{%- if features.pagination %}
+            limit: None,
+            offset: None,
+{%- endif %}
+        }
+    }
+{%- if features.multi_tenant %}
+    pub fn with_tenant_id(mut self, tenant_id: String) -> Self {
+        self.tenant_id = Some(tenant_id);
+        self
+    }
+{%- endif %}
+{%- if features.search %}
+    pub fn with_search_query(mut self, search_query: String) -> Self {
+        self.search_query = Some(search_query);
+        self
+    }
+{%- endif %}
+{%- for field in entity.fields %}
+{%- if field.name == "roles" or field.name == "role" %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: Vec<String>) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- elif field.name == "is_active" or field.name == "status" %}
+    pub fn with_{{ field.name }}(mut self, {{ field.name }}: {{ field.type }}) -> Self {
+        self.{{ field.name }} = Some({{ field.name }});
+        self
+    }
+{%- endif %}
+{%- endfor %}
+{%- if features.pagination %}
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+{%- endif %}
+}
+
+impl Default for List{{ entity.name }}sQuery {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Result of list {{ entity.name | snake_case }}s query
+#[derive(Debug, Clone)]
+pub struct List{{ entity.name }}sResult {
+    pub {{ entity.name | snake_case }}s: Vec<{{ entity.name }}>,
+}
+
+impl List{{ entity.name }}sResult {
+    pub fn new({{ entity.name | snake_case }}s: Vec<{{ entity.name }}>) -> Self {
+        Self { {{ entity.name | snake_case }}s }
+    }
+}
+
+{%- endif %}
+

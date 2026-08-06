@@ -1,0 +1,13 @@
+tasks:
+  - name: workspace_task_module_descriptor
+    description: "Generate a minimal workspace task module descriptor"
+    template: "core_workspace_module/v1"
+    template_file: "module_descriptor.tera"
+    target: "docs/generated/workspace-task-module-descriptor.txt"
+    path: "workspace/task"
+  - name: workspace_task_module_registration
+    description: "Generate a minimal workspace task module registration artifact"
+    template: "core_workspace_module/v1"
+    template_file: "module_registration.tera"
+    target: "docs/generated/workspace-task-module-registration.txt"
+    path: "workspace/task"

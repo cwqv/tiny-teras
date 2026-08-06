@@ -1,0 +1,64 @@
+# Proto 相关任务配置
+tasks:
+  # Proto 完整服务生成任务（推荐）
+  - name: um_proto_complete
+    description: "用户管理模块 Proto 完整服务生成（Service + Messages + Requests/Responses）"
+    template: "core_proto/v1"
+    template_file: "proto_complete.tera"
+    target: "protos/tinydev/v1/sys/um.proto"
+    path: "protos/tinydev/v1/sys"
+    
+    # Proto 配置
+    proto_package: "tinydev.v1.um"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+      pagination: true
+      search: true
+    
+    # 可搜索字段列表
+    searchable_fields:
+      - email
+      - display_name
+      - roles
+    
+    # DTO 字段配置（用于 proto 消息定义）
+    dto_fields:
+      create:
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - avatar_url
+        - phone
+        - roles
+      list:
+        - tenant_id
+        - search_query
+        - roles
+        - is_active
+      update:
+        - id
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - roles
+        - is_active
+  
+  # Proto Message 单独生成（可选）
+  - name: um_proto_message
+    description: "用户管理模块 Proto Message 生成"
+    template: "core_proto/v1"
+    template_file: "proto_message.tera"
+    target: "protos/tinydev/v1/sys/um_message.proto.tmp"
+    path: "protos/tinydev/v1/sys"
+  
+  # Proto Request/Response 单独生成（可选）
+  - name: um_proto_requests
+    description: "用户管理模块 Proto Requests/Responses 生成"
+    template: "core_proto/v1"
+    template_file: "proto_request_response.tera"
+    target: "protos/tinydev/v1/sys/um_requests.proto.tmp"
+    path: "protos/tinydev/v1/sys"

@@ -1,0 +1,73 @@
+use async_trait::async_trait;
+use uuid::Uuid;
+
+use shared_application::error::ApplicationResult;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+
+/// {{ entity.name }}仓储接口（Port）
+#[async_trait]
+pub trait {{ entity.name }}Repository: Send + Sync {
+{% if features.multi_tenant %}
+    /// 根据登录标识查找{{ entity.name }}（邮箱或用户名）
+    async fn find_by_login(
+        &self,
+        tenant_id: &str,
+        login: &str,
+    ) -> ApplicationResult<Option<{{ entity.name }}>>;
+
+{% endif %}
+    /// 根据{{ entity.name }} ID 查找{{ entity.name }}
+    async fn find_by_id(&self, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<Option<{{ entity.name }}>>;
+
+{% if features.multi_tenant %}
+    /// 更新最后登录时间
+    async fn touch_last_login(&self, tenant_id: &str, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<()>;
+
+{% endif %}
+    /// 保存或更新{{ entity.name }}
+    async fn upsert(&self, {{ entity.name | snake_case }}: {{ entity.name }}) -> ApplicationResult<()>;
+
+    /// 列出所有{{ entity.name }}
+    async fn list_all(&self) -> ApplicationResult<Vec<{{ entity.name }}>>;
+
+{% if features.multi_tenant %}
+    /// 按租户列出{{ entity.name }}
+    async fn list_by_tenant(&self, tenant_id: &str) -> ApplicationResult<Vec<{{ entity.name }}>>;
+
+{% endif %}
+{% if features.search %}
+    /// 搜索{{ entity.name }}
+    ///
+    /// # 参数
+{% if features.multi_tenant %}
+    /// - `tenant_id`: 租户ID（可选）
+{% endif %}
+{%- if entity.resolved_searchable_fields is defined and entity.resolved_searchable_fields | length > 0 %}
+  {%- for field in entity.resolved_searchable_fields %}
+    /// - `{{ field.name }}`: {{ field.description }}（可选，操作符: {{ field.operator }}）
+  {%- endfor %}
+{%- endif %}
+    /// - `limit`: 限制返回数量（可选）
+    /// - `offset`: 偏移量（可选）
+    async fn search(
+        &self,
+{% if features.multi_tenant %}
+        tenant_id: Option<&str>,
+{% endif %}
+{%- if entity.resolved_searchable_fields is defined and entity.resolved_searchable_fields | length > 0 %}
+  {%- for field in entity.resolved_searchable_fields %}
+        {{ field.name }}: {{ field.param_type }},
+  {%- endfor %}
+{%- endif %}
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> ApplicationResult<Vec<{{ entity.name }}>>;
+
+{% endif %}
+    /// 更新{{ entity.name }}
+    async fn update(&self, {{ entity.name | snake_case }}: {{ entity.name }}) -> ApplicationResult<()>;
+
+    /// 删除{{ entity.name }}{% if features.soft_delete %}（软删除：设置 is_active = false）{% endif %}
+    async fn delete(&self{% if features.multi_tenant %}, tenant_id: &str{% endif %}, {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}: Uuid) -> ApplicationResult<()>;
+}

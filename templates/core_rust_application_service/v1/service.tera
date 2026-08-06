@@ -1,0 +1,241 @@
+use std::sync::Arc;
+
+use uuid::Uuid;
+
+use shared_application::error::{ApplicationError, ApplicationResult};
+use shared_application::services::authentication_service::{
+    AuthenticationService, AuthenticationServiceTrait,
+};
+
+use crate::application::dto::generated::{{ entity.name | snake_case }}_dto::{
+    Create{{ entity.name }}Dto, Created{{ entity.name }}Dto, Delete{{ entity.name }}Dto,
+    Get{{ entity.name }}Dto, List{{ entity.name }}sDto, Update{{ entity.name }}Dto,
+};
+use crate::domain::entities::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+{% set has_password_hash = false %}
+{% for field in entity.fields %}
+{% if field.name == "password_hash" or field.name == "encrypted_password" %}
+{% set has_password_hash = true %}
+{% endif %}
+{% endfor %}
+/// {{ entity.name }}应用服务
+pub struct {{ entity.name }}Service<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    repo: Arc<R>,
+{% if has_password_hash %}
+    auth_service: Arc<AuthenticationService>,
+{% endif %}
+}
+
+impl<R> Clone for {{ entity.name }}Service<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    fn clone(&self) -> Self {
+        Self {
+            repo: self.repo.clone(),
+{% if has_password_hash %}
+            auth_service: self.auth_service.clone(),
+{% endif %}
+        }
+    }
+}
+
+impl<R> {{ entity.name }}Service<R>
+where
+    R: {{ entity.name }}Repository,
+{
+    pub fn new(repo: Arc<R>{% if has_password_hash %}, auth_service: Arc<AuthenticationService>{% endif %}) -> Self {
+        Self {
+            repo,
+{% if has_password_hash %}
+            auth_service,
+{% endif %}
+        }
+    }
+
+    /// 创建{{ entity.name }}
+    pub async fn create_{{ entity.name | snake_case }}(
+        &self,
+        req: Create{{ entity.name }}Dto,
+    ) -> ApplicationResult<Created{{ entity.name }}Dto> {
+{% set has_email = false %}
+{% for field in entity.fields %}
+{% if field.type == "Email" %}
+{% set has_email = true %}
+{% endif %}
+{% endfor %}
+{% if has_email %}
+        // 验证邮箱格式
+        let email = shared_domain::value_objects::Email::new(&req.email)
+            .map_err(|e| ApplicationError::validation_single(format!("邮箱格式无效: {}", e)))?;
+
+{% endif %}
+{% set has_password = false %}
+{% for field in entity.fields %}
+{% if field.name == "password" %}
+{% set has_password = true %}
+{% endif %}
+{% endfor %}
+{% if has_password %}
+        // 验证密码强度（可选）
+        if req.password.len() < 8 {
+            return Err(ApplicationError::validation_single("密码长度至少8位"));
+        }
+
+        // 哈希密码（使用 AuthenticationService 的 hash_password 方法）
+        let password_hash =
+            AuthenticationServiceTrait::hash_password(self.auth_service.as_ref(), &req.password)
+                .map_err(|e| ApplicationError::internal(format!("密码哈希失败: {}", e)))?;
+
+{% endif %}
+        // 创建{{ entity.name }} ID
+        let {{ entity.name | snake_case }}_id = Uuid::new_v4();
+
+        // 创建{{ entity.name }}实体
+        let {{ entity.name | snake_case }} = {{ entity.name }} {
+{% for field in entity.fields %}
+{% if field.primary_key %}
+            {{ field.name }}: {{ entity.name | snake_case }}_id,
+{% elif field.name == "email" and field.type == "Email" %}
+            email,
+{% elif field.name == "password_hash" or field.name == "encrypted_password" %}
+            password_hash,
+{% elif field.name == "tenant_id" %}
+            tenant_id: req.tenant_id.clone(),
+{% elif field.name == "roles" %}
+            roles: req.roles.clone(),
+{% elif field.name == "is_active" %}
+            is_active: true,
+{% elif field.name == "created_at" or field.name == "updated_at" %}
+            {{ field.name }}: chrono::Utc::now(),
+{% elif field.name == "deleted_at" %}
+            {{ field.name }}: None,
+{% elif entity.hidden_fields is defined and field.name in entity.hidden_fields %}
+            {{ field.name }}: None, // {{ field.name }} is hidden from DTO
+{% else %}
+            {{ field.name }}: req.{{ field.name }}.clone(),
+{% endif %}
+{% endfor %}
+        };
+
+        // 验证实体
+        {{ entity.name | snake_case }}.validate()
+            .map_err(|errors| ApplicationError::validation(errors))?;
+
+        // 保存到数据库
+        self.repo.upsert({{ entity.name | snake_case }}).await?;
+
+        Ok(Created{{ entity.name }}Dto {
+{% for field in entity.fields %}
+{% if field.primary_key %}
+            {{ entity.name | snake_case }}_id: {{ entity.name | snake_case }}_id,
+{% endif %}
+{% endfor %}
+{% if features.multi_tenant %}
+            tenant_id: req.tenant_id,
+{% endif %}
+        })
+    }
+
+    /// 获取{{ entity.name }}
+    pub async fn get_{{ entity.name | snake_case }}(
+        &self,
+        req: Get{{ entity.name }}Dto,
+    ) -> ApplicationResult<Option<{{ entity.name }}>> {
+        self.repo.find_by_id(req.{{ entity.name | snake_case }}_id).await
+    }
+
+    /// 列出{{ entity.name }}
+    pub async fn list_{{ entity.name | snake_case }}s(&self, req: List{{ entity.name }}sDto) -> ApplicationResult<Vec<{{ entity.name }}>> {
+{% if features.search and features.multi_tenant %}
+        self.repo
+            .search(
+                req.tenant_id.as_deref(),
+                req.search_query.as_deref(),
+                req.roles.as_deref().map(|v| v.as_ref()),
+                req.is_active,
+                req.limit,
+                req.offset,
+            )
+            .await
+{% else %}
+        self.repo.list_all().await
+{% endif %}
+    }
+
+    /// 更新{{ entity.name }}
+    pub async fn update_{{ entity.name | snake_case }}(
+        &self,
+        req: Update{{ entity.name }}Dto,
+    ) -> ApplicationResult<{{ entity.name }}> {
+        // 获取现有{{ entity.name }}
+        let mut {{ entity.name | snake_case }} = self.repo.find_by_id(req.{{ entity.name | snake_case }}_id).await?.ok_or_else(|| {
+            ApplicationError::not_found(format!("{{ entity.name }} not found: {}", req.{{ entity.name | snake_case }}_id))
+        })?;
+
+{% if features.multi_tenant %}
+        // 验证租户匹配
+        if {{ entity.name | snake_case }}.tenant_id != req.tenant_id {
+            return Err(ApplicationError::forbidden(
+                "{{ entity.name }} does not belong to this tenant",
+            ));
+        }
+
+{% endif %}
+        // 更新字段（跳过主键字段）
+{% for field in entity.dto_fields.update | default(value=[]) %}
+{% if not field.primary_key %}
+{% if field.name == "email" and field.type == "Email" %}
+        if let Some(new_email) = req.email {
+            {{ entity.name | snake_case }}.email = shared_domain::value_objects::Email::new(&new_email)
+                .map_err(|e| ApplicationError::validation_single(format!("邮箱格式无效: {}", e)))?;
+        }
+{% elif field.name == "password" %}
+        if let Some(new_password) = req.password {
+            // 哈希新密码
+            let password_hash = AuthenticationServiceTrait::hash_password(
+                self.auth_service.as_ref(),
+                &new_password,
+            )
+            .map_err(|e| ApplicationError::internal(format!("密码哈希失败: {}", e)))?;
+            {{ entity.name | snake_case }}.{% for field in entity.fields %}{% if field.name == "password_hash" or field.name == "encrypted_password" %}{{ field.name }}{% endif %}{% endfor %} = password_hash;
+        }
+{% else %}
+        if let Some(new_{{ field.name }}) = req.{{ field.name }} {
+            {{ entity.name | snake_case }}.{{ field.name }} = new_{{ field.name }};
+        }
+{% endif %}
+
+{% endif %}
+{% endfor %}
+
+        // 保存更新
+        self.repo.update({{ entity.name | snake_case }}.clone()).await?;
+
+        Ok({{ entity.name | snake_case }})
+    }
+
+    /// 删除{{ entity.name }}{% if features.soft_delete %}（软删除）{% endif %}
+    pub async fn delete_{{ entity.name | snake_case }}(&self, req: Delete{{ entity.name }}Dto) -> ApplicationResult<()> {
+        // 验证{{ entity.name }}存在{% if features.multi_tenant %}且属于该租户{% endif %}
+        let {{ entity.name | snake_case }} = self.repo.find_by_id(req.{{ entity.name | snake_case }}_id).await?.ok_or_else(|| {
+            ApplicationError::not_found(format!("{{ entity.name }} not found: {}", req.{{ entity.name | snake_case }}_id))
+        })?;
+
+{% if features.multi_tenant %}
+        if {{ entity.name | snake_case }}.tenant_id != req.tenant_id {
+            return Err(ApplicationError::forbidden(
+                "{{ entity.name }} does not belong to this tenant",
+            ));
+        }
+
+{% endif %}
+        // 执行{% if features.soft_delete %}软{% endif %}删除
+        self.repo.delete({% if features.multi_tenant %}&req.tenant_id, {% endif %}req.{{ entity.name | snake_case }}_id).await
+    }
+}

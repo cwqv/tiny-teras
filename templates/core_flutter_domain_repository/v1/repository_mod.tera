@@ -1,0 +1,3 @@
+//! {{ entity.name }}仓储接口
+
+export '{{ entity.name | snake_case }}_repository.dart';

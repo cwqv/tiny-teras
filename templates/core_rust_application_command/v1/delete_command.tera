@@ -1,0 +1,34 @@
+{% set entity_snake = entity.name | snake_case %}
+{% set entity_pascal = entity.name | pascal_case %}
+use uuid::Uuid;
+
+/// Delete {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Delete{{ entity_pascal }}Command {
+    /// {{ entity.name }} ID
+    pub {{ entity_snake }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+    /// Tenant ID
+    pub tenant_id: String,
+{% endif %}
+}
+
+impl Delete{{ entity_pascal }}Command {
+    pub fn new(
+        {{ entity_snake }}_id: Uuid,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+        tenant_id: String,
+{% endif %}
+    ) -> Self {
+        Self {
+            {{ entity_snake }}_id,
+{% if entity.schema == "sys" or  "tenant" in entity.table_name  %}
+            tenant_id,
+{% endif %}
+        }
+    }
+}
+
+// <<< block:custom_delete_methods
+// 自定义删除命令方法（在此添加自定义的删除逻辑）
+// >>> end:custom_delete_methods

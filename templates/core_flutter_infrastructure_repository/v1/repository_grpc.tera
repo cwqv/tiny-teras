@@ -1,0 +1,310 @@
+import 'package:shared_application/shared_application.dart';
+import 'package:shared_infrastructure/shared_infrastructure.dart';
+import 'package:contracts_dart/contracts_dart.dart' as contracts;
+
+import '../../domain/entities/{{ entity.name | snake_case }}.dart';
+import '../../domain/repositories/{{ entity.name | snake_case }}_repository.dart';
+
+/// gRPC {{ entity.name }}仓储实现
+class Grpc{{ entity.name }}Repository implements {{ entity.name }}Repository {
+  final EnhancedGrpcClient _grpcClient;
+
+  Grpc{{ entity.name }}Repository(this._grpcClient);
+
+{% if features.multi_tenant %}
+  @override
+  Future<Result<{{ entity.name }}?, Failure>> findByIdentifier({
+    required String tenantId,
+    required String identifier,
+  }) async {
+    try {
+      final request = contracts.Find{{ entity.name }}ByIdentifierRequest()
+        ..tenantId = tenantId
+        ..identifier = identifier;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.Find{{ entity.name }}ByIdentifierRequest,
+          contracts.Find{{ entity.name }}ByIdentifierResponse>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).findByIdentifier,
+        request,
+      );
+
+      if (response.has{{ entity.name }}()) {
+        return Success(_mapProtoToEntity(response.{{ entity.name | snake_case }}));
+      }
+      return const Success(null);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% endif %}
+  @override
+  Future<Result<{{ entity.name }}?, Failure>> findById({
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+{% if features.multi_tenant %}
+    required String tenantId,
+{% endif %}
+  }) async {
+    try {
+      final request = contracts.Get{{ entity.name }}Request()
+        ..{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}
+{% if features.multi_tenant %}
+        ..tenantId = tenantId
+{% endif %}
+      ;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.Get{{ entity.name }}Request,
+          contracts.Get{{ entity.name }}Response>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).get{{ entity.name }},
+        request,
+      );
+
+      if (response.has{{ entity.name }}()) {
+        return Success(_mapProtoToEntity(response.{{ entity.name | snake_case }}));
+      }
+      return const Success(null);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% if features.multi_tenant %}
+  @override
+  Future<Result<void, Failure>> touchLastLogin({
+    required String tenantId,
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+  }) async {
+    try {
+      final request = contracts.TouchLastLoginRequest()
+        ..tenantId = tenantId
+        ..{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}
+      ;
+
+      await _grpcClient.unaryCall<
+          contracts.TouchLastLoginRequest,
+          contracts.TouchLastLoginResponse>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).touchLastLogin,
+        request,
+      );
+
+      return const Success(null);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% endif %}
+  @override
+  Future<Result<{{ entity.name }}, Failure>> upsert({{ entity.name }} {{ entity.name | snake_case }}) async {
+    try {
+      final request = contracts.Create{{ entity.name }}Request()
+        ..tenantId = {{ entity.name | snake_case }}.tenantId ?? ''
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+        ..{{ field.name }} = {{ entity.name | snake_case }}.{{ field.name }}{% if field.type == "Email" %}{% elif field.type == "Vec<String>" or field.type == "List<String>" %}.toList(){% else %}{% endif %}
+{% endif %}
+{% endfor %}
+      ;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.Create{{ entity.name }}Request,
+          contracts.Created{{ entity.name }}Response>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).create{{ entity.name }},
+        request,
+      );
+
+      return Success(_mapProtoToEntity(response.{{ entity.name | snake_case }}));
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+  @override
+  Future<Result<List<{{ entity.name }}>, Failure>> listAll() async {
+    try {
+      final request = contracts.List{{ entity.name }}sRequest();
+
+      final response = await _grpcClient.unaryCall<
+          contracts.List{{ entity.name }}sRequest,
+          contracts.List{{ entity.name }}sResponse>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).list{{ entity.name }}s,
+        request,
+      );
+
+      final entities = response.{{ entity.name | snake_case }}s
+          .map((proto) => _mapProtoToEntity(proto))
+          .toList();
+
+      return Success(entities);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% if features.multi_tenant %}
+  @override
+  Future<Result<List<{{ entity.name }}>, Failure>> listByTenant({
+    required String tenantId,
+  }) async {
+    try {
+      final request = contracts.List{{ entity.name }}sRequest()
+        ..tenantId = tenantId;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.List{{ entity.name }}sRequest,
+          contracts.List{{ entity.name }}sResponse>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).list{{ entity.name }}s,
+        request,
+      );
+
+      final entities = response.{{ entity.name | snake_case }}s
+          .map((proto) => _mapProtoToEntity(proto))
+          .toList();
+
+      return Success(entities);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% endif %}
+{% if features.search %}
+  @override
+  Future<Result<List<{{ entity.name }}>, Failure>> search({
+{% if features.multi_tenant %}
+    String? tenantId,
+{% endif %}
+    String? searchQuery,
+    List<String>? roles,
+    bool? isActive,
+    int? limit,
+    int? offset,
+  }) async {
+    try {
+      final request = contracts.Search{{ entity.name }}sRequest()
+{% if features.multi_tenant %}
+        ..tenantId = tenantId ?? ''
+{% endif %}
+        ..searchQuery = searchQuery ?? ''
+        ..roles.addAll(roles ?? [])
+        ..isActive = isActive ?? false
+        ..limit = limit ?? 0
+        ..offset = offset ?? 0
+      ;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.Search{{ entity.name }}sRequest,
+          contracts.Search{{ entity.name }}sResponse>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).search{{ entity.name }}s,
+        request,
+      );
+
+      final entities = response.{{ entity.name | snake_case }}s
+          .map((proto) => _mapProtoToEntity(proto))
+          .toList();
+
+      return Success(entities);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+{% endif %}
+  @override
+  Future<Result<{{ entity.name }}, Failure>> update({{ entity.name }} {{ entity.name | snake_case }}) async {
+    try {
+      final request = contracts.Update{{ entity.name }}Request()
+        ..{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {{ entity.name | snake_case }}.id
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+        ..{{ field.name }} = {{ entity.name | snake_case }}.{{ field.name }}{% if field.type == "Vec<String>" or field.type == "List<String>" %}.toList(){% else %}{% endif %}
+{% endif %}
+{% endfor %}
+      ;
+
+      final response = await _grpcClient.unaryCall<
+          contracts.Update{{ entity.name }}Request,
+          contracts.Update{{ entity.name }}Response>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).update{{ entity.name }},
+        request,
+      );
+
+      return Success(_mapProtoToEntity(response.{{ entity.name | snake_case }}));
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+  @override
+  Future<Result<void, Failure>> delete({
+{% if features.multi_tenant %}
+    required String tenantId,
+{% endif %}
+    required String {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+  }) async {
+    try {
+      final request = contracts.Delete{{ entity.name }}Request()
+        ..{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %} = {% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %}
+{% if features.multi_tenant %}
+        ..tenantId = tenantId
+{% endif %}
+      ;
+
+      await _grpcClient.unaryCall<
+          contracts.Delete{{ entity.name }}Request,
+          contracts.Delete{{ entity.name }}Response>(
+        contracts.{{ entity.name }}ServiceClient(_grpcClient.channel).delete{{ entity.name }},
+        request,
+      );
+
+      return const Success(null);
+    } catch (e, stackTrace) {
+      return FailureResult(
+        GrpcErrorMapper.mapToFailure(e, stackTrace),
+      );
+    }
+  }
+
+  /// 将 Protobuf 消息映射为领域实体
+  {{ entity.name }} _mapProtoToEntity(contracts.{{ entity.name }} proto) {
+    return {{ entity.name }}(
+      id: proto.{% for field in entity.fields %}{% if field.primary_key %}{{ field.name }}{% endif %}{% endfor %},
+      createdAt: proto.createdAt.toDateTime().toUtc(),
+      updatedAt: proto.updatedAt.toDateTime().toUtc(),
+      createdBy: proto.hasCreatedBy() ? proto.createdBy : null,
+      updatedBy: proto.hasUpdatedBy() ? proto.updatedBy : null,
+      version: proto.version.toInt(),
+      isDeleted: proto.isDeleted,
+      deletedAt: proto.hasDeletedAt() ? proto.deletedAt.toDateTime().toUtc() : null,
+      deletedBy: proto.hasDeletedBy() ? proto.deletedBy : null,
+      status: proto.hasStatus() ? proto.status : null,
+      tenantId: proto.hasTenantId() ? proto.tenantId : null,
+      tags: proto.tags.toSet(),
+      metadata: proto.metadata,
+      auditTrail: const [],
+{% for field in entity.fields %}
+{% if not field.primary_key and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" and field.name != "is_deleted" and field.name != "deleted_at" and field.name != "deleted_by" %}
+      {{ field.name }}: {% if field.type == "Email" %}proto.{{ field.name }}{% elif field.type == "Vec<String>" or field.type == "List<String>" %}proto.{{ field.name }}.toList(){% elif field.type == "bool" %}proto.{{ field.name }}{% else %}proto.{{ field.name }}{% endif %},
+{% endif %}
+{% endfor %}
+    );
+  }
+}

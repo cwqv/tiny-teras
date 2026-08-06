@@ -1,0 +1,386 @@
+import 'package:shared_application/core/usecase.dart';
+import 'package:shared_application/core/result.dart';
+import 'package:shared_application/core/failure.dart';
+import 'package:{{ entity.name | snake_case }}/domain/repositories/{{ entity.name | snake_case }}_repository.dart';
+{%- for method in entity.service_methods %}
+{%- if method.name == "Create" %}
+import 'package:{{ entity.name | snake_case }}/application/dto/commands/{{ method.name | lower }}_{{ entity.name | snake_case }}_command.dart';
+import 'package:{{ entity.name | snake_case }}/application/dto/results/{{ method.name | lower }}_{{ entity.name | snake_case }}_result.dart';
+{%- elif method.name == "Get" %}
+import 'package:{{ entity.name | snake_case }}/application/dto/commands/{{ method.name | lower }}_{{ entity.name | snake_case }}_command.dart';
+import 'package:{{ entity.name | snake_case }}/application/dto/results/{{ method.name | lower }}_{{ entity.name | snake_case }}_result.dart';
+{%- elif method.name == "List" %}
+import 'package:{{ entity.name | snake_case }}/application/dto/commands/{{ method.name | lower }}_{{ entity.name | snake_case }}s_command.dart';
+import 'package:{{ entity.name | snake_case }}/application/dto/results/{{ method.name | lower }}_{{ entity.name | snake_case }}s_result.dart';
+{%- endif %}
+{%- endfor %}
+import 'package:{{ entity.name | snake_case }}/domain/entities/{{ entity.name | snake_case }}.dart';
+{%- for field in entity.fields %}
+{%- if field.type == "Email" or field.name == "email" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/email.dart';
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+import 'package:{{ entity.name | snake_case }}/domain/value_objects/{{ field.name | snake_case }}.dart';
+{%- endif %}
+{%- endfor %}
+
+{%- if entity.service_methods is defined and entity.service_methods | length > 0 %}
+{# 使用 service_methods 循环生成 UseCase 类（CQRS 模式） #}
+{%- for method in entity.service_methods %}
+{%- if method.name == "Get" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例（CQRS 模式）
+class {{ method.use_case_class }} extends QueryHandler<Get{{ entity.name }}Query, Get{{ entity.name }}Result, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<Get{{ entity.name }}Result, Failure>> execute(Get{{ entity.name }}Query query) async {
+    try {
+      // Find {{ entity.name | snake_case }} by ID
+      final findResult = await _repository.findById(
+        query.{{ entity.name | lower }}Id,
+{%- if features.multi_tenant %}
+        query.tenantId,
+{%- endif %}
+      );
+
+      if (findResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to get {{ entity.name | snake_case }}',
+          code: 'GET_{{ entity.name | upper }}_FAILED',
+          cause: findResult.failureOrNull,
+        ));
+      }
+
+      final {{ entity.name | snake_case }} = findResult.successOrNull;
+      if ({{ entity.name | snake_case }} == null) {
+        return FailureResult(BusinessFailure(
+          message: '{{ entity.name }} not found: ${query.{{ entity.name | lower }}Id.value}',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+      return Success(Get{{ entity.name }}Result({{ entity.name | snake_case }}));
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '获取{{ entity.name }}时发生错误: $e',
+        code: 'GET_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "List" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例（CQRS 模式）
+class {{ method.use_case_class }} extends QueryHandler<List{{ entity.name }}sQuery, List{{ entity.name }}sResult, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<List{{ entity.name }}sResult, Failure>> execute(List{{ entity.name }}sQuery query) async {
+    try {
+{%- if features.search %}
+      final findResult = await _repository.search(
+{%- if features.multi_tenant %}
+        tenantId: query.tenantId,
+{%- endif %}
+        searchQuery: query.searchQuery,
+        limit: query.limit,
+        offset: query.offset,
+      );
+{%- else %}
+{%- if features.multi_tenant %}
+      final findResult = await _repository.listByTenant(
+        tenantId: query.tenantId,
+      );
+{%- else %}
+      final findResult = await _repository.listAll();
+{%- endif %}
+{%- endif %}
+
+      if (findResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to list {{ entity.name | snake_case }}s',
+          code: 'LIST_{{ entity.name | upper }}S_FAILED',
+          cause: findResult.failureOrNull,
+        ));
+      }
+
+      return Success(List{{ entity.name }}sResult(findResult.successOrNull ?? []));
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '列出{{ entity.name }}时发生错误: $e',
+        code: 'LIST_{{ entity.name | upper }}S_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Create" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例（CQRS 模式）
+class {{ method.use_case_class }} extends CommandHandler<Create{{ entity.name }}Command, Create{{ entity.name }}Result, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<Create{{ entity.name }}Result, Failure>> execute(Create{{ entity.name }}Command command) async {
+    try {
+      // Validate command
+      command.validate();
+
+      // Check if email already exists (if applicable)
+{%- for field in entity.fields %}
+{%- if field.type == "Email" or field.name == "email" %}
+      final emailExistsResult = await _repository.existsByEmail(
+        command.email.value,
+{%- if features.multi_tenant %}
+        command.tenantId,
+{%- endif %}
+      );
+
+      if (emailExistsResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to check email availability',
+          code: 'EMAIL_CHECK_FAILED',
+          cause: emailExistsResult.failureOrNull,
+        ));
+      }
+
+      if (emailExistsResult.successOrNull ?? false) {
+        return FailureResult(BusinessFailure(
+          message: 'Email already exists: ${command.email.value}',
+          code: 'EMAIL_ALREADY_EXISTS',
+        ));
+      }
+{%- break %}
+{%- endif %}
+{%- endfor %}
+
+      // Create {{ entity.name | snake_case }} entity
+      final {{ entity.name | snake_case }} = {{ entity.name }}.create(
+{%- for field in entity.fields %}
+{%- if field.name == "id" %}
+        {{ entity.name | lower }}Id: {{ entity.name | pascal_case }}(''), // Will be generated by repository
+{%- elif (field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by") and field.type == "String" %}
+        {{ field.name }}: command.{{ field.name }},
+{%- elif field.type == "Email" %}
+        {{ field.name }}: command.{{ field.name }},
+{%- elif field.name == "is_active" %}
+        isActive: true,
+{%- elif field.name == "created_by" %}
+        createdBy: command.context.userId,
+{%- endif %}
+{%- endfor %}
+      );
+
+      // Save {{ entity.name | snake_case }}
+      final createResult = await _repository.create({{ entity.name | snake_case }});
+
+      if (createResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to create {{ entity.name | snake_case }}',
+          code: 'CREATE_{{ entity.name | upper }}_FAILED',
+          cause: createResult.failureOrNull,
+        ));
+      }
+
+      return Success(Create{{ entity.name }}Result(createResult.successOrNull!));
+    } on ValidationException catch (e, st) {
+      return FailureResult(ValidationFailure(
+        message: e.message,
+        code: 'VALIDATION_FAILED',
+        cause: e,
+        stackTrace: st,
+        errors: e.errors,
+      ));
+    } on BusinessRuleException catch (e, st) {
+      return FailureResult(BusinessFailure(
+        message: e.message,
+        code: e.ruleName,
+        cause: e,
+        stackTrace: st,
+      ));
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '创建{{ entity.name }}时发生错误: $e',
+        code: 'CREATE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Update" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例（CQRS 模式）
+class {{ method.use_case_class }} extends CommandHandler<Update{{ entity.name }}Command, Update{{ entity.name }}Result, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<Update{{ entity.name }}Result, Failure>> execute(Update{{ entity.name }}Command command) async {
+    try {
+      command.validate();
+
+      // Get existing {{ entity.name | snake_case }}
+      final getResult = await _repository.findById(
+        command.{{ entity.name | lower }}Id,
+{%- if features.multi_tenant %}
+        command.tenantId,
+{%- endif %}
+      );
+
+      if (getResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to get {{ entity.name | snake_case }}',
+          code: 'GET_{{ entity.name | upper }}_FAILED',
+          cause: getResult.failureOrNull,
+        ));
+      }
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(BusinessFailure(
+          message: '{{ entity.name }} not found',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+{%- if features.multi_tenant %}
+      // Verify tenant match
+      if (existingEntity.tenantId != command.tenantId.value) {
+        return FailureResult(AuthorizationFailure(
+          message: '{{ entity.name }} does not belong to this tenant',
+          code: 'TENANT_MISMATCH',
+        ));
+      }
+
+{%- endif %}
+      // Update entity
+      final updatedEntity = existingEntity.copyWith(
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "tenant_id" and field.name != "id" and field.name != "created_at" and field.name != "created_by" %}
+        {{ field.name }}: command.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+      );
+
+      final updateResult = await _repository.update(updatedEntity);
+
+      if (updateResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to update {{ entity.name | snake_case }}',
+          code: 'UPDATE_{{ entity.name | upper }}_FAILED',
+          cause: updateResult.failureOrNull,
+        ));
+      }
+
+      return Success(Update{{ entity.name }}Result(updateResult.successOrNull!));
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '更新{{ entity.name }}时发生错误: $e',
+        code: 'UPDATE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- elif method.name == "Delete" %}
+// ============ {{ method.use_case_class }} ============
+
+/// {{ method.description }}的用例（CQRS 模式）
+class {{ method.use_case_class }} extends CommandHandler<Delete{{ entity.name }}Command, Delete{{ entity.name }}Result, Failure> {
+  final {{ entity.name }}Repository _repository;
+
+  {{ method.use_case_class }}(this._repository);
+
+  @override
+  Future<Result<Delete{{ entity.name }}Result, Failure>> execute(Delete{{ entity.name }}Command command) async {
+    try {
+      command.validate();
+
+      // Verify {{ entity.name | snake_case }} exists{% if features.multi_tenant %} and belongs to tenant{% endif %}
+      final getResult = await _repository.findById(
+        command.{{ entity.name | lower }}Id,
+{%- if features.multi_tenant %}
+        command.tenantId,
+{%- endif %}
+      );
+
+      if (getResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to get {{ entity.name | snake_case }}',
+          code: 'GET_{{ entity.name | upper }}_FAILED',
+          cause: getResult.failureOrNull,
+        ));
+      }
+
+      final existingEntity = getResult.successOrNull;
+      if (existingEntity == null) {
+        return FailureResult(BusinessFailure(
+          message: '{{ entity.name }} not found',
+          code: '{{ entity.name | upper }}_NOT_FOUND',
+        ));
+      }
+
+{%- if features.multi_tenant %}
+      // Verify tenant match
+      if (existingEntity.tenantId != command.tenantId.value) {
+        return FailureResult(AuthorizationFailure(
+          message: '{{ entity.name }} does not belong to this tenant',
+          code: 'TENANT_MISMATCH',
+        ));
+      }
+
+{%- endif %}
+      // Execute delete
+      final deleteResult = await _repository.delete(
+        command.{{ entity.name | lower }}Id,
+{%- if features.multi_tenant %}
+        command.tenantId,
+{%- endif %}
+      );
+
+      if (deleteResult.isFailure) {
+        return FailureResult(InfrastructureFailure(
+          message: 'Failed to delete {{ entity.name | snake_case }}',
+          code: 'DELETE_{{ entity.name | upper }}_FAILED',
+          cause: deleteResult.failureOrNull,
+        ));
+      }
+
+      return Success(const Delete{{ entity.name }}Result());
+    } catch (e, st) {
+      return FailureResult(UnknownFailure(
+        message: '删除{{ entity.name }}时发生错误: $e',
+        code: 'DELETE_{{ entity.name | upper }}_ERROR',
+        cause: e,
+        stackTrace: st,
+      ));
+    }
+  }
+}
+
+{%- endif %}
+{%- endfor %}
+{%- else %}
+// TODO: 配置 service_methods 以生成 CQRS UseCase
+{%- endif %}
+

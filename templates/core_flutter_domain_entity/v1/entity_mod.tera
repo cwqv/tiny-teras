@@ -1,0 +1,3 @@
+//! {{ entity.description }} Domain Entities
+
+export '{{ entity.name | snake_case }}.dart';

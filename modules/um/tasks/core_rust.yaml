@@ -1,0 +1,285 @@
+# Core Rust 后端任务配置
+# 包含 Domain、Infrastructure、Application、DTO 层的所有任务
+
+tasks:
+  # ==================== Domain 层任务 ====================
+  # Domain Entity 生成任务
+  - name: um_domain_entity
+    description: "用户管理模块 Domain Entity 生成任务"
+    template: "core_rust_domain_entity/v1"
+    template_file: "entity.tera"
+    target: "crates/sys/um/src/domain/entities/user.rs"
+    path: "crates/sys/um"
+
+  # Domain Entity Mod 生成任务
+  - name: um_domain_entity_mod
+    description: "用户管理模块 Domain Entity Mod 生成任务"
+    template: "core_rust_domain_entity/v1"
+    template_file: "entity_mod.tera"
+    target: "crates/sys/um/src/domain/entities/mod.rs"
+    path: "crates/sys/um"
+
+  # Domain Repository 生成任务
+  - name: um_domain_repository
+    description: "用户管理模块 Domain Repository 生成任务"
+    template: "core_rust_domain_repository/v1"
+    template_file: "repository.tera"
+    target: "crates/sys/um/src/domain/repositories/user_repository.rs"
+    path: "crates/sys/um"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+      search: true
+      soft_delete: true
+
+  # Domain Repository Mod 生成任务
+  - name: um_domain_repository_mod
+    description: "用户管理模块 Domain Repository Mod 生成任务"
+    template: "core_rust_domain_repository/v1"
+    template_file: "repository_mod.tera"
+    target: "crates/sys/um/src/domain/repositories/mod.rs"
+    path: "crates/sys/um"
+
+  # ==================== Infrastructure 层任务 ====================
+  # Infrastructure Repository 生成任务
+  - name: um_infrastructure_repository
+    description: "用户管理模块 Infrastructure Repository 生成任务"
+    template: "core_rust_infrastructure_repository/v1"
+    template_file: "repository_postgres.tera"
+    target: "crates/sys/um/src/infrastructure/repositories/postgres_user_repository.rs"
+    path: "crates/sys/um"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+      search: true
+      soft_delete: true
+
+  # Infrastructure Repository Mod 生成任务
+  - name: um_infrastructure_repository_mod
+    description: "用户管理模块 Infrastructure Repository Mod 生成任务"
+    template: "core_rust_infrastructure_repository/v1"
+    template_file: "repository_mod.tera"
+    target: "crates/sys/um/src/infrastructure/repositories/mod.rs"
+    path: "crates/sys/um"
+
+  # ==================== Application 层任务 ====================
+  # Application Service 生成任务
+  - name: um_application_service
+    description: "用户管理模块 Application Service 生成任务"
+    template: "core_rust_application_service/v1"
+    template_file: "service.tera"
+    target: "crates/sys/um/src/application/services/user_service.rs"
+    path: "crates/sys/um"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+      search: true
+      soft_delete: true
+    
+    # DTO 字段配置（用于 service 内部使用）
+    dto_fields:
+      create:
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - roles
+      update:
+        - id
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - roles
+        - is_active
+
+  # Application Service Mod 生成任务
+  - name: um_application_service_mod
+    description: "用户管理模块 Application Service Mod 生成任务"
+    template: "core_rust_application_service/v1"
+    template_file: "service_mod.tera"
+    target: "crates/sys/um/src/application/services/mod.rs"
+    path: "crates/sys/um"
+
+  # ==================== DTO 层任务 ====================
+  # DTO 生成任务（使用完整文件模板）
+  - name: um_dto
+    description: "用户管理模块 DTO 生成任务"
+    template: "core_rust_application_dto/v1"
+    template_file: "dto.tera"
+    target: "crates/sys/um/src/application/dto/user_dto.rs"
+    path: "crates/sys/um"
+    
+    # 功能开关
+    features:
+      multi_tenant: true
+      pagination: true
+      search: true
+    
+    # DTO 字段配置
+    dto_fields:
+      create:
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - roles
+      created: []  # Created DTO 会自动生成
+      get:
+        - id
+        - tenant_id
+      list:
+        - tenant_id
+        - search_query
+        - roles
+        - is_active
+        - limit
+        - offset
+      update:
+        - id
+        - tenant_id
+        - email
+        - password
+        - display_name
+        - avatar_url
+        - phone
+        - roles
+        - is_active
+      delete:
+        - id
+        - tenant_id
+
+  # ==================== CQRS 层任务 ====================
+  # Command 生成任务
+  - name: um_application_command_create
+    description: "用户管理模块 Create Command 生成任务"
+    template: "core_rust_application_command/v1"
+    template_file: "command.tera"
+    target: "crates/sys/um/src/application/commands/create_user_command.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Create"
+    features:
+      multi_tenant: true
+
+  - name: um_application_command_update
+    description: "用户管理模块 Update Command 生成任务"
+    template: "core_rust_application_command/v1"
+    template_file: "command.tera"
+    target: "crates/sys/um/src/application/commands/update_user_command.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Update"
+    features:
+      multi_tenant: true
+
+  - name: um_application_command_delete
+    description: "用户管理模块 Delete Command 生成任务"
+    template: "core_rust_application_command/v1"
+    template_file: "command.tera"
+    target: "crates/sys/um/src/application/commands/delete_user_command.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Delete"
+    features:
+      multi_tenant: true
+      soft_delete: false
+
+  # Query 生成任务
+  - name: um_application_query_get
+    description: "用户管理模块 Get Query 生成任务"
+    template: "core_rust_application_query/v1"
+    template_file: "query.tera"
+    target: "crates/sys/um/src/application/queries/get_user_query.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Get"
+    features:
+      multi_tenant: true
+
+  - name: um_application_query_list
+    description: "用户管理模块 List Query 生成任务"
+    template: "core_rust_application_query/v1"
+    template_file: "query.tera"
+    target: "crates/sys/um/src/application/queries/list_users_query.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "List"
+    features:
+      multi_tenant: true
+      search: true
+      pagination: true
+
+  # CommandHandler 生成任务
+  - name: um_application_command_handler_create
+    description: "用户管理模块 Create CommandHandler 生成任务"
+    template: "core_rust_application_command_handler/v1"
+    template_file: "command_handler.tera"
+    target: "crates/sys/um/src/application/handlers/create_user_command_handler.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Create"
+    features:
+      multi_tenant: true
+
+  - name: um_application_command_handler_update
+    description: "用户管理模块 Update CommandHandler 生成任务"
+    template: "core_rust_application_command_handler/v1"
+    template_file: "command_handler.tera"
+    target: "crates/sys/um/src/application/handlers/update_user_command_handler.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Update"
+    features:
+      multi_tenant: true
+
+  - name: um_application_command_handler_delete
+    description: "用户管理模块 Delete CommandHandler 生成任务"
+    template: "core_rust_application_command_handler/v1"
+    template_file: "command_handler.tera"
+    target: "crates/sys/um/src/application/handlers/delete_user_command_handler.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Delete"
+    features:
+      multi_tenant: true
+      soft_delete: false
+
+  # QueryHandler 生成任务
+  - name: um_application_query_handler_get
+    description: "用户管理模块 Get QueryHandler 生成任务"
+    template: "core_rust_application_query_handler/v1"
+    template_file: "query_handler.tera"
+    target: "crates/sys/um/src/application/handlers/get_user_query_handler.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "Get"
+    features:
+      multi_tenant: true
+
+  - name: um_application_query_handler_list
+    description: "用户管理模块 List QueryHandler 生成任务"
+    template: "core_rust_application_query_handler/v1"
+    template_file: "query_handler.tera"
+    target: "crates/sys/um/src/application/handlers/list_users_query_handler.rs"
+    path: "crates/sys/um"
+    architecture_mode: "cqrs"
+    method:
+      name: "List"
+    features:
+      multi_tenant: true
+      search: true
+      pagination: true
+

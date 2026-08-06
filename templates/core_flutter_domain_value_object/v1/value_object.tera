@@ -1,0 +1,145 @@
+import 'package:shared_domain/shared_domain.dart';
+
+{%- if field.type == "Uuid" or field.type == "String" %}
+/// Value object for {{ field.name | pascal_case }}
+class {{ field.name | pascal_case }} extends ValueObject<String> {
+  {{ field.name | pascal_case }}._(super.value);
+
+  factory {{ field.name | pascal_case }}(String value) {
+{%- if field.name == "email" or field.type == "Email" %}
+    // 验证邮箱格式
+    if (value.isEmpty) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="邮箱") }}不能为空',
+        code: '{{ field.name | upper }}_EMPTY',
+        rejectedValue: value,
+      );
+    }
+    // 简单的邮箱格式验证
+    if (!value.contains('@') || !value.contains('.')) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="邮箱") }}格式无效',
+        code: '{{ field.name | upper }}_INVALID_FORMAT',
+        rejectedValue: value,
+      );
+    }
+{%- elif field.name == "password" %}
+    // 验证密码强度
+    if (value.isEmpty) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="密码") }}不能为空',
+        code: '{{ field.name | upper }}_EMPTY',
+        rejectedValue: value,
+      );
+    }
+    if (value.length < 8) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="密码") }}长度至少8位',
+        code: '{{ field.name | upper }}_TOO_SHORT',
+        rejectedValue: value.length,
+      );
+    }
+{%- elif field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by" %}
+    // 验证 ID 不能为空
+    if (value.isEmpty) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="ID") }}不能为空',
+        code: '{{ field.name | upper }}_EMPTY',
+        rejectedValue: value,
+      );
+    }
+{%- else %}
+    // 基础验证：不能为空（如果字段不是可选的）
+{%- if not field.nullable %}
+    if (value.isEmpty) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value=field.name) }}不能为空',
+        code: '{{ field.name | upper }}_EMPTY',
+        rejectedValue: value,
+      );
+    }
+{%- endif %}
+{%- endif %}
+    return {{ field.name | pascal_case }}._(value);
+  }
+
+  /// Create {{ field.name | pascal_case }} from string
+  static {{ field.name | pascal_case }} fromString(String value) => {{ field.name | pascal_case }}(value);
+
+{%- if field.name == "email" or field.type == "Email" %}
+  /// Get email domain
+  String get domain => value.split('@').last;
+
+  /// Get email local part
+  String get localPart => value.split('@').first;
+{%- endif %}
+}
+
+{%- elif field.type == "i32" or field.type == "i64" or field.type == "usize" %}
+/// Value object for {{ field.name | pascal_case }}
+class {{ field.name | pascal_case }} extends ValueObject<int> {
+  {{ field.name | pascal_case }}._(super.value);
+
+  factory {{ field.name | pascal_case }}(int value) {
+{%- if field.name == "user_id" or field.name == "tenant_id" or field.name == "created_by" or field.name == "updated_by" %}
+    if (value <= 0) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value="ID") }}必须大于0',
+        code: '{{ field.name | upper }}_INVALID',
+        rejectedValue: value,
+      );
+    }
+{%- endif %}
+    return {{ field.name | pascal_case }}._(value);
+  }
+
+  /// Create {{ field.name | pascal_case }} from int
+  static {{ field.name | pascal_case }} fromInt(int value) => {{ field.name | pascal_case }}(value);
+
+  /// Create {{ field.name | pascal_case }} from string
+  static {{ field.name | pascal_case }} fromString(String value) {
+    final intValue = int.tryParse(value);
+    if (intValue == null) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value=field.name) }}格式无效',
+        code: '{{ field.name | upper }}_INVALID_FORMAT',
+        rejectedValue: value,
+      );
+    }
+    return {{ field.name | pascal_case }}(intValue);
+  }
+}
+
+{%- else %}
+/// Value object for {{ field.name | pascal_case }}
+/// TODO: 根据字段类型 {{ field.type }} 实现相应的验证逻辑
+class {{ field.name | pascal_case }} extends ValueObject<String> {
+  {{ field.name | pascal_case }}._(super.value);
+
+  factory {{ field.name | pascal_case }}(String value) {
+{%- if not field.nullable %}
+    if (value.isEmpty) {
+      throw ValidationException.single(
+        field: '{{ field.name }}',
+        message: '{{ field.description | default(value=field.name) }}不能为空',
+        code: '{{ field.name | upper }}_EMPTY',
+        rejectedValue: value,
+      );
+    }
+{%- endif %}
+    return {{ field.name | pascal_case }}._(value);
+  }
+
+  /// Create {{ field.name | pascal_case }} from string
+  static {{ field.name | pascal_case }} fromString(String value) => {{ field.name | pascal_case }}(value);
+}
+{%- endif %}
+
