@@ -20,9 +20,9 @@ git clone <this-repo> tiny-teras
 
 ```
 tiny-teras/
-├── templates/            # Tera 模板 (core_rust_* / core_flutter_* / core_proto / workspace / erp)
-├── modules/              # 模块任务配置 (um / erp / workspace)
-├── registry.yaml         # 任务组注册 (backend/frontend/all/...)
+├── templates/            # Tera 模板 (core_rust_* / core_flutter_* / core_proto / core_sql_migration / core_workspace_module)
+├── modules/              # 模块任务配置 (um / workspace / examples)
+├── registry.yaml         # 任务组注册 (backend/frontend/all/core/proto/migrations/workspace_*)
 ├── generated/            # 生成产物 (gitignored, 运行时产生)
 ├── backups/              # apply 备份 (gitignored, 运行时产生)
 └── CHANGELOG.md

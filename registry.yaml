@@ -47,25 +47,6 @@ task_groups:
     description: 仅 Migrations 任务
     tasks:
     - um/migrations
-  product:
-    description: PRODUCT 模块所有任务
-    tasks:
-    - product/core_rust
-    - product/core_flutter
-    - product/protos
-    - product/migrations
-  erp:
-    description: "ERP 全模块任务（按依赖序: base → sale → purchase → inventory → account）"
-    tasks:
-    - erp/erp_base
-  erp_backend:
-    description: ERP 仅后端
-    tasks:
-    - erp/erp_base
-  erp_frontend:
-    description: ERP 仅前端
-    tasks:
-    - erp/erp_base
   workspace_task:
     description: Workspace task 标准模块任务
     tasks:

@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed
+- Removed `modules/erp/` (8 entity YAMLs + README) and 6 `templates/erp_*/` families
+  (`erp_computed_fields`, `erp_domain_event`, `erp_header_line_repo`,
+  `erp_state_machine`, `erp_flutter_list_page`, `erp_flutter_form_page`).
+  These were extracted from the monorepo but never wired into the registry:
+  the ERP modules had no `tasks/` directory, the `erp_*` templates had zero
+  references, and the registry's `erp`/`erp_backend`/`erp_frontend`/`product`
+  groups pointed at non-existent task lists. ERP codegen will be reintroduced
+  as a follow-up once the task-wiring design is finalized.
+
+### Changed
+- `registry.yaml`: removed the dead `product`, `erp`, `erp_backend`, and
+  `erp_frontend` task groups (they referenced missing modules/tasks).
+
+### Fixed
+- `.gitignore`: ignore `.reasonix/`, `reasonix.toml`, `.workbuddy/` tooling-private state.
+
 ## [1.0.0] - 2026-08
 
 ### Added
