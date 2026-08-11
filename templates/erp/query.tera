@@ -1,0 +1,134 @@
+{# ERP Domain Query Template (Query + Handler 合一) #}
+{# 支持: typed_id, cqrs::ApplicationError, 标准 Get/List 查询 #}
+{%- if method.name == "Get" %}
+use cqrs::query::{Query, QueryHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 获取 {{ entity.description | default(value=entity.name) }} Query
+#[derive(Debug, Clone)]
+pub struct Get{{ entity.name }}Query {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+}
+
+impl Query for Get{{ entity.name }}Query {
+    type Output = {{ entity.name }};
+}
+
+/// 获取 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Get{{ entity.name }}QueryHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Get{{ entity.name }}QueryHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> QueryHandler<Get{{ entity.name }}Query> for Get{{ entity.name }}QueryHandler<R> {
+    type Output = {{ entity.name }};
+
+    async fn handle(&self, query: Get{{ entity.name }}Query) -> ApplicationResult<Self::Output> {
+        let entity = self.repository
+            .find_by_id(&query.id, &query.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", query.id)
+            ))?;
+
+        Ok(entity)
+    }
+}
+
+{%- elif method.name == "List" %}
+use cqrs::query::{Query, QueryHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 列表查询 {{ entity.description | default(value=entity.name) }} Query
+#[derive(Debug, Clone)]
+pub struct List{{ entity.name }}sQuery {
+    pub tenant_id: String,
+    /// 分页：偏移量
+    pub offset: Option<i64>,
+    /// 分页：限制数量
+    pub limit: Option<i64>,
+{%- for field in entity.fields %}
+{%- if field.searchable %}
+    /// 搜索字段: {{ field.description | default(value=field.name) }}
+    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+{%- endif %}
+{%- endfor %}
+}
+
+impl Query for List{{ entity.name }}sQuery {
+    type Output = List{{ entity.name }}sResult;
+}
+
+/// 列表查询结果
+#[derive(Debug, Clone)]
+pub struct List{{ entity.name }}sResult {
+    pub items: Vec<{{ entity.name }}>,
+    pub total: i64,
+}
+
+/// 列表查询 {{ entity.description | default(value=entity.name) }} Handler
+pub struct List{{ entity.name }}sQueryHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> List{{ entity.name }}sQueryHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> QueryHandler<List{{ entity.name }}sQuery> for List{{ entity.name }}sQueryHandler<R> {
+    type Output = List{{ entity.name }}sResult;
+
+    async fn handle(&self, query: List{{ entity.name }}sQuery) -> ApplicationResult<Self::Output> {
+        // 构建搜索条件
+        let mut search_params = Vec::new();
+
+{%- for field in entity.fields %}
+{%- if field.searchable %}
+        if let Some(value) = query.{{ field.name }} {
+            search_params.push(("{{ field.name }}".to_string(), value.to_string()));
+        }
+{%- endif %}
+{%- endfor %}
+
+        // 执行查询
+        let items = self.repository
+            .search(&query.tenant_id, &search_params, query.offset, query.limit)
+            .await?;
+
+        // 获取总数
+        let total = self.repository
+            .count(&query.tenant_id, &search_params)
+            .await?;
+
+        Ok(List{{ entity.name }}sResult {
+            items,
+            total,
+        })
+    }
+}
+
+{%- endif %}

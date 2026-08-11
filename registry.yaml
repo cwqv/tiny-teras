@@ -61,6 +61,11 @@ task_groups:
     - workspace/memo/core_flutter
     - workspace/memo/protos
     - workspace/memo/migrations
+  account:
+    description: Account 模块任务（account.accounts 实体落地，计划见 docs/account-accounts-tera-landing-plan.md）
+    tasks:
+    - account/core_rust
+    - account/protos
 execution:
   parallel: false
   on_failure:

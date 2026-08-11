@@ -1,0 +1,255 @@
+{# ERP GPUI Panel List Template #}
+{# 输入: entity (上下文), 生成一个 DataTable 列表面板 #}
+{# 变量: entity.name, entity.table_columns[], entity.seed_rows[] #}
+//! {{ entity.name }} 列表面板：DataTable 展示{{ entity.description | default(value=entity.name) }}。
+//!
+//! 数据来自 `erp-sync` 的 local-first SyncRuntime（SQLite + outbox + gRPC）。
+//! runtime 不可用时回退内存 seed 演示模式。
+
+use gpui::{
+    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div,
+};
+use gpui_component::{
+    ActiveTheme as _, Sizable as _, Size,
+    button::{Button, ButtonVariants as _},
+    dock::{Panel, PanelEvent, PanelState},
+    h_flex,
+    table::{Column, DataTable, TableDelegate, TableState},
+    v_flex,
+};
+
+use erp_sync::{
+    SyncConfig, SyncRuntime, {{ entity.synced_type }},
+    {{ entity.core_type }}{% if entity.need_tenant %}, TenantId{% endif %}{% if entity.need_uom %}, UomId{% endif %}
+{% if entity.extra_imports %}    , {{ entity.extra_imports }}
+{% endif %}
+};
+
+/// {{ entity.name }} dock 面板。
+pub struct {{ entity.name }}Panel {
+    pub(crate) focus_handle: FocusHandle,
+    pub(crate) rows: Vec<{{ entity.synced_type }}>,
+    pub(crate) table: Entity<TableState<{{ entity.name }}TableDelegate>>,
+    runtime: Option<SyncRuntime>,
+}
+
+/// `DataTable` 的供数 delegate。
+#[derive(Default)]
+pub(crate) struct {{ entity.name }}TableDelegate {
+    pub(crate) rows: Vec<{{ entity.synced_type }}>,
+}
+
+impl TableDelegate for {{ entity.name }}TableDelegate {
+    fn columns_count(&self, _cx: &App) -> usize {
+        {{ entity.table_columns | length }}
+    }
+
+    fn rows_count(&self, _cx: &App) -> usize {
+        self.rows.len()
+    }
+
+    fn column(&self, col_ix: usize, _cx: &App) -> Column {
+        match col_ix {
+        {%- for col in entity.table_columns %}
+            {{ loop.index0 }} => Column::new("{{ col.key }}", "{{ col.label }}").width({{ col.width }}.){% if col.text_center %}.text_center(){% endif %}{% if col.text_right %}.text_right(){% endif %},
+        {%- endfor %}
+            _ => Column::new("x", ""),
+        }
+    }
+
+    fn render_td(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let Some(sp) = self.rows.get(row_ix) else {
+            return div().into_any_element();
+        };
+        match col_ix {
+        {%- for col in entity.table_columns %}
+            {{ loop.index0 }} => {{ entity.render_expressions[loop.index0] }},
+        {%- endfor %}
+            _ => div().into_any_element(),
+        }
+    }
+
+    fn render_empty(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        h_flex()
+            .size_full()
+            .justify_center()
+            .py_10()
+            .text_color(cx.theme().muted_foreground.opacity(0.6))
+            .child("暂无数据")
+    }
+}
+
+impl {{ entity.name }}Panel {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let table = cx.new(|cx| TableState::new({{ entity.name }}TableDelegate::default(), window, cx));
+
+        let runtime = Self::init_runtime();
+        let mut panel = Self {
+            focus_handle: cx.focus_handle(),
+            rows: Vec::new(),
+            table,
+            runtime,
+        };
+
+        if panel.runtime.is_some() {
+            panel.reload_from_db();
+            if panel.rows.is_empty() {
+                panel.seed_db_if_empty();
+                panel.reload_from_db();
+            }
+        } else {
+            panel.rows = seed_{{ entity.name | snake_case }}s();
+        }
+        panel.sync_table_delegate(cx);
+        panel
+    }
+
+    fn init_runtime() -> Option<SyncRuntime> {
+        let dir = dirs::data_dir()?.join("gpui-client");
+        std::fs::create_dir_all(&dir).ok()?;
+        let path = dir.join("erp.db");
+        let config = SyncConfig {
+            server_url: std::env::var("SYNC_SERVER_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            token: std::env::var("SYNC_AUTH_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            tenant_id: std::env::var("SYNC_TENANT_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            ..SyncConfig::default()
+        };
+        let mut rt = SyncRuntime::new(path.to_str()?, config).ok()?;
+        rt.start();
+        Some(rt)
+    }
+
+    fn reload_from_db(&mut self) {
+        if let Some(rt) = &self.runtime {
+            if let Ok(rows) = rt.db().{{ entity.db_list_method }}(false) {
+                self.rows = rows;
+            }
+        }
+    }
+
+    fn seed_db_if_empty(&mut self) {
+        if let Some(rt) = &self.runtime {
+            let now = now_secs();
+            for sp in seed_{{ entity.name | snake_case }}s() {
+                let _ = rt.db().{{ entity.db_write_method }}(&sp, "create", now);
+            }
+            rt.sync_now();
+        }
+    }
+
+    fn sync_table_delegate(&mut self, cx: &mut Context<Self>) {
+        let rows = self.rows.clone();
+        self.table.update(cx, |state, cx| {
+            state.delegate_mut().rows = rows;
+            cx.notify();
+        });
+    }
+
+    fn refresh(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.reload_from_db();
+        self.sync_table_delegate(cx);
+        if let Some(rt) = &self.runtime {
+            rt.sync_now();
+        }
+        cx.notify();
+    }
+}
+
+impl EventEmitter<PanelEvent> for {{ entity.name }}Panel {}
+
+impl Focusable for {{ entity.name }}Panel {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for {{ entity.name }}Panel {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let count = self.rows.len();
+        v_flex()
+            .id("erp-{{ entity.name | snake_case }}-panel")
+            .size_full()
+            .bg(theme.background)
+            .track_focus(&self.focus_handle)
+            .child(
+                h_flex()
+                    .w_full()
+                    .px_4()
+                    .py_3()
+                    .items_center()
+                    .gap_3()
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(div().text_color(theme.foreground).child("{{ entity.display_name }}"))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(format!("{count} 条")),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("erp-{{ entity.name | snake_case }}-refresh")
+                            .ghost()
+                            .small()
+                            .label("⟳")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.refresh(window, cx)
+                            })),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(DataTable::new(&self.table).with_size(Size::Small)),
+            )
+    }
+}
+
+impl Panel for {{ entity.name }}Panel {
+    fn panel_name(&self) -> &'static str {
+        "erp-{{ entity.name | snake_case }}"
+    }
+
+    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        "{{ entity.display_name }}"
+    }
+
+    fn dump(&self, _: &App) -> PanelState {
+        PanelState::new(self)
+    }
+}
+
+// ── seed 数据 ──────────────────────────────────────────────────────
+
+fn now_secs() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn seed_{{ entity.name | snake_case }}s() -> Vec<{{ entity.synced_type }}> {
+    {{ entity.seed_code }}
+}

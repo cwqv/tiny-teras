@@ -1,0 +1,95 @@
+{# ERP Domain Create Command Template (Command + Handler 合一) #}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 创建 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Create{{ entity.name }}Command {
+    pub tenant_id: String,
+    pub operator_id: String,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endif %}
+{%- endfor %}
+}
+
+impl Command for Create{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 创建 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Create{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Create{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Create{{ entity.name }}Command> for Create{{ entity.name }}CommandHandler<R> {
+    type Output = {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %};
+
+    async fn handle(&self, command: Create{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 验证必填字段
+{%- for field in entity.fields %}
+{%- if not field.nullable and field.rust_type == "String" and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "version" %}
+        if command.{{ field.name }}.trim().is_empty() {
+            return Err(ApplicationError::validation(vec![
+                "{{ field.description | default(value=field.name) }}不能为空".to_string()
+            ]));
+        }
+{%- endif %}
+{%- endfor %}
+
+        // 创建实体
+        {% if entity.extra_config.typed_id -%}
+        let id = {{ entity.name }}Id::new();
+        {%- else -%}
+        let id = Uuid::new_v4();
+        {%- endif %}
+
+        let mut entity = {{ entity.name }} {
+            id,
+            tenant_id: command.tenant_id,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+            {{ field.name }}: command.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            {% if entity.fields | filter(attribute="name", value="version") | first -%}
+            version: 1,
+            {%- endif %}
+        };
+
+        // 业务验证
+        entity.validate()?;
+
+        // 持久化
+        self.repository.create(&entity).await?;
+
+        Ok(entity.id)
+    }
+}

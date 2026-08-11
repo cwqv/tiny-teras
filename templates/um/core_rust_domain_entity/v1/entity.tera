@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+{%- if entity.typed_id is defined and entity.typed_id %}
+use kernel::types::entity_id::EntityId;
+{%- endif %}
+{%- if entity.extra_imports is defined and entity.extra_imports | length > 0 %}
+{% for imp in entity.extra_imports %}use {{ imp }};
+{% endfor %}
+{%- endif %}
 
 use shared_application::error::{ApplicationError, ApplicationResult};
 {% for field in entity.fields %}
@@ -66,6 +73,11 @@ impl {{ enum.rust_enum_name }} {
 {% if entity.description %}
 /// - {{ entity.description }}
 {% endif %}
+{%- if entity.typed_id is defined and entity.typed_id %}
+/// 类型化主键
+pub type {{ entity.name }}Id = EntityId<{{ entity.name }}>;
+
+{%- endif %}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct {{ entity.name }} {
 {% for field in entity.fields %}

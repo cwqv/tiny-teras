@@ -1,0 +1,139 @@
+{# ERP Domain Entity Template #}
+{# 支持: typed_id, strum 枚举, new() 构造器, test 骨架, custom_methods 保留块 #}
+use serde::{Deserialize, Serialize};
+{% if entity.extra_config.typed_id or entity.typed_id -%}
+use kernel::types::entity_id::EntityId;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use chrono::{DateTime, Utc};
+
+{%- if entity.enums and entity.enums | length > 0 %}
+use strum_macros::{Display, EnumString};
+{%- endif %}
+
+{%- if entity.enums and entity.enums | length > 0 %}
+
+// ============ Enums ============
+{% for enum in entity.enums %}
+/// {{ enum.description | default(value=enum.rust_enum_name) }}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, Default)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum {{ enum.rust_enum_name }} {
+{%- for variant in enum.variants %}
+{%- if loop.first %}
+    #[default]
+{%- endif %}
+    /// {{ variant.display | default(value=variant.name) }}
+    {{ variant.name | pascal_case }},
+{%- endfor %}
+}
+
+impl {{ enum.rust_enum_name }} {
+    /// 从数据库字符串创建（兜底 default）
+    pub fn from_db(s: &str) -> Self {
+        use std::str::FromStr;
+        Self::from_str(s).unwrap_or_default()
+    }
+}
+
+{% endfor %}
+{%- endif %}
+
+{% if entity.extra_config.typed_id or entity.typed_id -%}
+/// {{ entity.description | default(value=entity.name) }} 类型化主键
+pub type {{ entity.name }}Id = EntityId<{{ entity.name }}>;
+
+{%- endif %}
+
+/// {{ entity.description | default(value=entity.name) }}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }} {
+{%- for field in entity.fields %}
+    /// {{ field.description | default(value=field.name) }}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endfor %}
+}
+
+impl {{ entity.name }} {
+    /// 创建新{{ entity.description | default(value=entity.name) }}（最小必填字段）
+    pub fn new(
+{%- for field in entity.fields %}
+{%- if not field.nullable and not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if not field.default %}
+        {{ field.name }}: {{ field.rust_type }},
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+{%- for field in entity.fields %}
+{%- if field.primary_key and field.name == "id" %}
+{%- if entity.extra_config.typed_id or entity.typed_id %}
+            id: {{ entity.name }}Id::new(),
+{%- else %}
+            id: Uuid::new_v4(),
+{%- endif %}
+{%- elif field.name == "created_at" or field.name == "updated_at" %}
+            {{ field.name }}: now,
+{%- elif field.name == "version" %}
+            {{ field.name }}: 1,
+{%- elif field.default %}
+            {{ field.name }}: {{ field.default }},
+{%- elif field.nullable or field.name == "created_by" or field.name == "updated_by" %}
+            {{ field.name }}: None,
+{%- else %}
+            {{ field.name }},
+{%- endif %}
+{%- endfor %}
+        }
+    }
+
+    /// 业务验证
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+{%- for field in entity.fields %}
+{%- if not field.nullable and field.rust_type == "String" and field.name != "id" and field.name != "tenant_id" %}
+        if self.{{ field.name }}.trim().is_empty() {
+            errors.push("{{ field.description | default(value=field.name) }}不能为空".to_string());
+        }
+{%- endif %}
+{%- endfor %}
+
+        // <<< block:custom_validation
+        // 自定义验证逻辑（手工补充）
+        // >>> end:custom_validation
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    // <<< block:custom_methods
+    // 自定义业务方法（手工补充，如 archive/unarchive/ensure_active 等）
+    // >>> end:custom_methods
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_defaults() {
+        // TODO: 补充 new() 测试
+    }
+
+    #[test]
+    fn test_validate_empty_name() {
+        // TODO: 补充必填字段验证测试
+    }
+
+    // <<< block:custom_tests
+    // 自定义测试（手工补充）
+    // >>> end:custom_tests
+}

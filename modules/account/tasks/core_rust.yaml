@@ -1,0 +1,111 @@
+# Account 模块 Core Rust 后端任务配置
+# 实体: Account (account.accounts)
+# 注意:
+#   - target 已重写为 ERP 分层路径（非默认的 crates/sys/<mod>）
+#   - Port / PG repo / gRPC handler / use_cases 不走 tera（手工，照 partner/product 样板）
+#   - command/query 生成后需手工合并为 command+handler 合一文件（product 风格）
+
+tasks:
+  # ==================== Domain 层 ====================
+  - name: account_domain_entity
+    description: "Account Domain Entity（骨架，需手工补 AccountId/枚举strum/new/test）"
+    template: "core_rust_domain_entity/v1"
+    template_file: "entity.tera"
+    target: "core/domains/erp/account/src/domain/entities/account_account.rs"
+    # typed_id=true（来自 account.yaml）触发 EntityId<Account> 别名生成
+
+  # entity_mod 不走 tera：account 已有 8 个实体，手工在 entities/mod.rs 加一行更安全
+  # Port（account_repository.rs）不走 tera：手工照 partner_repository.rs
+
+  # ==================== Application 层 ====================
+  - name: account_application_dto
+    description: "Account DTO（骨架，需手工补类型化 id 字段）"
+    template: "core_rust_application_dto/v1"
+    template_file: "dto_complete.tera"
+    target: "core/domains/erp/account/src/dto/account_dto.rs"
+    features:
+      multi_tenant: true
+      pagination: true
+      search: true
+    dto_fields:
+      create:
+        - tenant_id
+        - name
+        - code_store
+        - account_type
+        - internal_group
+        - currency_id
+        - reconcile
+        - active
+      get:
+        - id
+        - tenant_id
+      list:
+        - tenant_id
+        - search_query
+        - account_type
+        - active
+        - limit
+        - offset
+      update:
+        - id
+        - tenant_id
+        - name
+        - code_store
+        - account_type
+        - internal_group
+        - currency_id
+        - reconcile
+        - active
+        - version
+      delete:
+        - id
+        - tenant_id
+
+  - name: account_application_command_create
+    description: "Account Create Command（生成后合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "create_command.tera"
+    target: "core/domains/erp/account/src/application/commands/create_account.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Create" }
+    features: { multi_tenant: true }
+
+  - name: account_application_command_update
+    description: "Account Update Command（生成后合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "update_command.tera"
+    target: "core/domains/erp/account/src/application/commands/update_account.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Update" }
+    features: { multi_tenant: true }
+
+  - name: account_application_command_delete
+    description: "Account Delete Command（生成后合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "delete_command.tera"
+    target: "core/domains/erp/account/src/application/commands/delete_account.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Delete" }
+    features: { multi_tenant: true }
+
+  - name: account_application_query_get
+    description: "Account Get Query（生成后合并 handler）"
+    template: "core_rust_application_query/v1"
+    template_file: "get_query.tera"
+    target: "core/domains/erp/account/src/application/queries/get_account.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Get" }
+    features: { multi_tenant: true }
+
+  - name: account_application_query_list
+    description: "Account List Query（生成后合并 handler）"
+    template: "core_rust_application_query/v1"
+    template_file: "list_query.tera"
+    target: "core/domains/erp/account/src/application/queries/list_account.rs"
+    architecture_mode: "cqrs"
+    method: { name: "List" }
+    features:
+      multi_tenant: true
+      search: true
+      pagination: true

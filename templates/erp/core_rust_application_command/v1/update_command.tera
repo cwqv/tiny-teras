@@ -1,0 +1,98 @@
+{# ERP Domain Update Command Template (Command + Handler 合一) #}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 更新 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Update{{ entity.name }}Command {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+    pub operator_id: String,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if field.extra_config.clearable %}
+    /// 三态 Option: None=不变更, Some(None)=清空, Some(Some(v))=赋新值
+    pub {{ field.name }}: Option<Option<{{ field.rust_type }}>>,
+{%- else %}
+    /// 二态 Option: None=不变更, Some(v)=赋新值
+    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+}
+
+impl Command for Update{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 更新 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Update{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Update{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Update{{ entity.name }}Command> for Update{{ entity.name }}CommandHandler<R> {
+    type Output = ();
+
+    async fn handle(&self, command: Update{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 查找实体
+        let mut entity = self.repository
+            .find_by_id(&command.id, &command.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", command.id)
+            ))?;
+
+        // 应用变更
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if field.extra_config.clearable %}
+        // 三态 Option 处理
+        if let Some(value) = command.{{ field.name }} {
+            entity.{{ field.name }} = value;
+        }
+{%- else %}
+        if let Some(value) = command.{{ field.name }} {
+            entity.{{ field.name }} = value;
+        }
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+
+        entity.updated_at = chrono::Utc::now();
+        {% if entity.fields | filter(attribute="name", value="version") | first -%}
+        entity.version += 1;
+        {%- endif %}
+
+        // 业务验证
+        entity.validate()?;
+
+        // 持久化（乐观锁在 repository 层处理）
+        self.repository.update(&entity).await?;
+
+        Ok(())
+    }
+}

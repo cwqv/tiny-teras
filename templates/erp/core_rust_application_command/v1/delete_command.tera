@@ -1,0 +1,65 @@
+{# ERP Domain Delete Command Template (Command + Handler 合一) #}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 删除 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Delete{{ entity.name }}Command {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+    pub operator_id: String,
+}
+
+impl Command for Delete{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 删除 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Delete{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Delete{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Delete{{ entity.name }}Command> for Delete{{ entity.name }}CommandHandler<R> {
+    type Output = ();
+
+    async fn handle(&self, command: Delete{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 验证实体存在
+        let _entity = self.repository
+            .find_by_id(&command.id, &command.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", command.id)
+            ))?;
+
+        // 业务验证（例如：检查是否可删除）
+        // entity.ensure_deletable()?;
+
+        // 删除
+        self.repository.delete(&command.id, &command.tenant_id).await?;
+
+        Ok(())
+    }
+}

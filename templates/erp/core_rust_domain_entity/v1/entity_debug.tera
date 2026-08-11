@@ -1,0 +1,34 @@
+{# Test Entity Template - Debug Version #}
+use serde::{Deserialize, Serialize};
+use kernel::types::entity_id::EntityId;
+
+pub type {{ entity.name }}Id = EntityId<{{ entity.name }}>;
+
+/// {{ entity.description | default(value=entity.name) }}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }} {
+{%- for field in entity.fields %}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endfor %}
+}
+
+impl {{ entity.name }} {
+    // DEBUG: Listing all fields and their properties
+{%- for field in entity.fields %}
+    // Field: {{ field.name }}
+    //   - nullable: {{ field.nullable }}
+    //   - primary_key: {{ field.primary_key }}
+    //   - default: {% if field.default is defined %}{{ field.default }}{% else %}NOT_DEFINED{% endif %}
+    //   - Should include in new()?: {% if not field.nullable and field.default is not defined and not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}YES{% else %}NO{% endif %}
+{%- endfor %}
+
+    pub fn new(
+{%- for field in entity.fields %}
+{%- if not field.nullable and field.default is not defined and not field.primary_key and field.name != "id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+        {{ field.name }}: {{ field.rust_type }},
+{%- endif %}
+{%- endfor %}
+    ) -> Self {
+        todo!()
+    }
+}

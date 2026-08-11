@@ -1,0 +1,51 @@
+{# ERP Domain Get Query Template (Query + Handler 合一) #}
+use cqrs::query::{Query, QueryHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 获取 {{ entity.description | default(value=entity.name) }} Query
+#[derive(Debug, Clone)]
+pub struct Get{{ entity.name }}Query {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+}
+
+impl Query for Get{{ entity.name }}Query {
+    type Output = {{ entity.name }};
+}
+
+/// 获取 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Get{{ entity.name }}QueryHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Get{{ entity.name }}QueryHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> QueryHandler<Get{{ entity.name }}Query> for Get{{ entity.name }}QueryHandler<R> {
+    type Output = {{ entity.name }};
+
+    async fn handle(&self, query: Get{{ entity.name }}Query) -> ApplicationResult<Self::Output> {
+        let entity = self.repository
+            .find_by_id(&query.id, &query.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", query.id)
+            ))?;
+
+        Ok(entity)
+    }
+}

@@ -1,0 +1,194 @@
+# Account 模块 Tera 项目配置
+# 版本: v1
+# 描述: 会计科目（account.accounts）模块代码生成配置
+#
+# 落地计划参见: docs/account-accounts-tera-landing-plan.md
+# 关键: typed_id=true 触发 entity.tera 生成 `type AccountId = EntityId<Account>`
+#       profile=erp_domain 使用 ERP 域模板（templates/erp/*）
+#       target 路径已重写为 ERP 分层（core/domains/erp/account + server/modules/erp/erp_account_server）
+
+project: account
+version: v1
+description: "会计科目（account.accounts）模块"
+profile: erp_domain  # 使用 ERP 域模板
+
+entities:
+  - name: Account
+    table_name: accounts
+    schema: account
+    description: "会计科目（Chart of Accounts 主数据）"
+    typed_id: true              # T1：触发 EntityId<Account> 别名生成
+    sync_strategy: NearTime     # CQRS 同步策略
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+      - Delete
+
+    indexed_fields:
+      - id
+      - tenant_id
+      - code_store
+      - account_type
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "AccountId"
+        flutter_type: "String"
+        nullable: false
+        primary_key: true
+        description: "科目 ID"
+      - name: tenant_id
+        type: String
+        rust_type: "kernel::multi_tenant::TenantId"
+        flutter_type: "String"
+        nullable: false
+        description: "租户 ID"
+      - name: name
+        type: String
+        rust_type: "String"
+        flutter_type: "String"
+        nullable: false
+        description: "科目名称"
+      - name: description
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "描述"
+      - name: currency_id
+        type: Uuid
+        rust_type: "Option<erp_base::domain::entities::currency::CurrencyId>"
+        flutter_type: "String"
+        nullable: true
+        description: "科目币种"
+      - name: code_store
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "科目代码（列名 code_store，非 code）"
+      - name: active
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "true"
+        description: "是否启用"
+      - name: account_type
+        type: String
+        rust_type: "Option<AccountType>"
+        flutter_type: "String"
+        nullable: true
+        is_enum: true
+        enum_name: AccountType
+        description: "科目类型"
+      - name: include_initial_balance
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "是否纳入期初余额"
+      - name: internal_group
+        type: String
+        rust_type: "Option<AccountInternalGroup>"
+        flutter_type: "String"
+        nullable: true
+        is_enum: true
+        enum_name: AccountInternalGroup
+        description: "科目内部组"
+      - name: reconcile
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "允许核销"
+      - name: note
+        type: String
+        rust_type: "Option<String>"
+        flutter_type: "String"
+        nullable: true
+        description: "备注"
+      - name: non_trade
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "非贸易科目"
+      - name: display_mapping_tab
+        type: bool
+        rust_type: "bool"
+        flutter_type: "bool"
+        nullable: false
+        default: "false"
+        description: "映射页签显示"
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        description: "创建时间"
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        flutter_type: "DateTime"
+        nullable: false
+        description: "更新时间"
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<kernel::types::user_id::UserId>"
+        flutter_type: "String"
+        nullable: true
+        description: "创建人"
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<kernel::types::user_id::UserId>"
+        flutter_type: "String"
+        nullable: true
+        description: "更新人"
+      - name: version
+        type: i32
+        rust_type: "i32"
+        flutter_type: "int"
+        nullable: false
+        default: 1
+        description: "版本号（乐观锁）"
+
+    enums:
+      - name: account_type
+        rust_enum_name: AccountType
+        description: "科目类型（Odoo 17 常见值集，落地前与 account 域 owner 核对）"
+        variants:
+          - { name: asset_current,         display: "流动资产" }
+          - { name: asset_cash,            display: "现金" }
+          - { name: asset_receivable,      display: "应收" }
+          - { name: asset_non_current,     display: "非流动资产" }
+          - { name: asset_fixed,           display: "固定资产" }
+          - { name: liability_current,     display: "流动负债" }
+          - { name: liability_payable,     display: "应付" }
+          - { name: liability_non_current, display: "非流动负债" }
+          - { name: equity,                display: "权益" }
+          - { name: income,                display: "收入" }
+          - { name: income_other,          display: "其他收入" }
+          - { name: expense,               display: "费用" }
+          - { name: expense_depreciation,  display: "折旧" }
+          - { name: cost_of_revenue,       display: "销售成本" }
+          - { name: off_balance,           display: "表外" }
+      - name: internal_group
+        rust_enum_name: AccountInternalGroup
+        description: "科目内部组"
+        variants:
+          - { name: asset }
+          - { name: liability }
+          - { name: equity }
+          - { name: income }
+          - { name: expense }
+          - { name: off_balance }
+
+tasks: []

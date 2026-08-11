@@ -1,0 +1,121 @@
+# ERP GPUI 面板生成任务配置
+# 实体: Partner (联系人/公司), ProductTemplate (产品模板)
+#
+# 生成目标: tiny-client-gpui/crates/erp/
+# 使用: tinyd tera gen --task erp_gpui && tinyd tera apply --task erp_gpui
+
+tasks:
+  # ==================== Partner 列表面板 ====================
+  - name: erp_partner_gpui_panel
+    description: "Partner 列表面板（DataTable，6 列，5 行 seed）"
+    template: "core_gpui_panel/v1"
+    template_file: "panel_list.tera"
+    target: "crates/erp/src/partner_panel.rs"
+    path: "crates/erp"
+
+    entity:
+      name: Partner
+      snake_case_name: partner
+      display_name: "Partner"
+      description: "联系人/公司"
+      synced_type: SyncedPartner
+      core_type: Partner
+      need_tenant: true
+      need_uom: false
+      db_list_method: list_partners
+      db_write_method: write_partner_local
+      panel_name: erp-partner
+
+      table_columns:
+        - { key: name,    label: "名称", width: 200 }
+        - { key: type,    label: "类型", width: 80 }
+        - { key: email,   label: "邮箱", width: 180 }
+        - { key: phone,   label: "电话", width: 140 }
+        - { key: city,    label: "城市", width: 100 }
+        - { key: active,  label: "状态", width: 70, text_center: true }
+
+      render_expressions:
+        - 'div().text_sm().text_color(theme.foreground).child(sp.partner.display_name()).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(if sp.partner.is_company { "公司" } else { "个人" }).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(sp.partner.email.as_deref().unwrap_or("—").to_owned()).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(sp.partner.phone.as_deref().unwrap_or("—").to_owned()).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(sp.partner.city.as_deref().unwrap_or("—").to_owned()).into_any_element()'
+        - 'div().text_sm().text_color(if sp.partner.active { theme.primary } else { theme.muted_foreground }).child(if sp.partner.active { "启用" } else { "停用" }).into_any_element()'
+
+      seed_code: |
+        let tenant = TenantId::new();
+        let now = now_secs();
+        let make = |name: &str, is_company: bool, email: &str, phone: &str, city: &str, active: bool| {
+            let mut p = Partner::new(tenant.clone(), name, is_company);
+            p.email = Some(email.into());
+            p.phone = Some(phone.into());
+            p.city = Some(city.into());
+            p.active = active;
+            SyncedPartner { partner: p, version: 0, modified_at: now, is_deleted: false }
+        };
+        vec![
+            make("Acme Corporation", true, "contact@acme.com", "+1-555-0100", "New York", true),
+            make("Globex Inc", true, "info@globex.com", "+1-555-0200", "San Francisco", true),
+            make("Alice Wang", false, "alice@example.com", "+86-138-0000-0001", "Shanghai", true),
+            make("Bob Zhang", false, "bob@example.com", "+86-139-0000-0002", "Beijing", true),
+            make("Inactive Co", true, "old@inactive.com", "+1-555-0300", "Boston", false),
+        ]
+
+  # ==================== ProductTemplate 列表面板 ====================
+  - name: erp_product_gpui_panel
+    description: "ProductTemplate 列表面板（DataTable，6 列，5 行 seed）"
+    template: "core_gpui_panel/v1"
+    template_file: "panel_list.tera"
+    target: "crates/erp/src/product_panel.rs"
+    path: "crates/erp"
+
+    entity:
+      name: ProductTemplate
+      snake_case_name: product_template
+      display_name: "Product"
+      description: "产品模板"
+      synced_type: SyncedProductTemplate
+      core_type: ProductTemplate
+      need_tenant: true
+      need_uom: true
+      extra_imports: "ProductType"
+      db_list_method: list_product_templates
+      db_write_method: write_product_template_local
+      panel_name: erp-product
+
+      table_columns:
+        - { key: name,     label: "名称",    width: 200 }
+        - { key: type,     label: "类型",    width: 80 }
+        - { key: price,    label: "售价",    width: 100, text_right: true }
+        - { key: code,     label: "内部编码", width: 120 }
+        - { key: sale_ok,  label: "可销售",  width: 70, text_center: true }
+        - { key: active,   label: "状态",    width: 70, text_center: true }
+
+      render_expressions:
+        - 'div().text_sm().text_color(theme.foreground).child(sp.template.name.clone()).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(match &sp.template.r#type { ProductType::Consu => "消耗品", ProductType::Service => "服务", ProductType::Combo => "组合" }).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(sp.template.list_price.map(|p| format!("{p:.2}")).unwrap_or_else(|| "—".into())).into_any_element()'
+        - 'div().text_sm().text_color(theme.muted_foreground).child(sp.template.default_code.as_deref().unwrap_or("—").to_owned()).into_any_element()'
+        - 'if sp.template.sale_ok { div().text_sm().text_color(theme.primary).child("✓").into_any_element() } else { div().text_sm().text_color(theme.muted_foreground).child("—").into_any_element() }'
+        - 'div().text_sm().text_color(if sp.template.active { theme.primary } else { theme.muted_foreground }).child(if sp.template.active { "启用" } else { "停用" }).into_any_element()'
+
+      seed_code: |
+        let tenant = TenantId::new();
+        let uom = UomId::new();
+        let now = now_secs();
+        let make = |name: &str, ptype: ProductType, price: Option<f64>, code: Option<&str>, sale_ok: bool, active: bool| {
+            let mut p = ProductTemplate::new(tenant.clone(), name, uom.clone());
+            p.r#type = ptype;
+            p.list_price = price;
+            p.default_code = code.map(Into::into);
+            p.sale_ok = sale_ok;
+            p.active = active;
+            SyncedProductTemplate { template: p, version: 0, modified_at: now, is_deleted: false }
+        };
+        vec![
+            make("笔记本电脑", ProductType::Consu, Some(5999.0), Some("LAPTOP-001"), true, true),
+            make("咨询服务", ProductType::Service, Some(500.0), None, true, true),
+            make("办公椅", ProductType::Consu, Some(899.0), Some("CHAIR-002"), true, true),
+            make("咖啡机", ProductType::Consu, Some(2599.0), Some("COFFEE-003"), false, true),
+            make("已停产显示器", ProductType::Consu, Some(1299.0), Some("MON-004"), false, false),
+        ]

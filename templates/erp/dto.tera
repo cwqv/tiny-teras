@@ -1,0 +1,102 @@
+{# ERP Domain DTO Template #}
+{# 支持: typed_id, 三态 Option (clearable 字段) #}
+use serde::{Deserialize, Serialize};
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+
+/// {{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }}Dto {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" %}
+    pub {{ field.name }}: {% if field.nullable %}Option<{{ field.rust_type }}>{% else %}{{ field.rust_type }}{% endif %},
+{%- endif %}
+{%- endfor %}
+}
+
+impl {{ entity.name }}Dto {
+    /// 从 domain entity 转换
+    pub fn from_entity(entity: crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}) -> Self {
+        Self {
+            id: entity.id,
+            tenant_id: entity.tenant_id,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" %}
+            {{ field.name }}: entity.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+        }
+    }
+}
+
+/// 创建 {{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Create{{ entity.name }}Dto {
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+    pub {{ field.name }}: {% if field.nullable %}Option<{{ field.rust_type }}>{% else %}{{ field.rust_type }}{% endif %},
+{%- endif %}
+{%- endfor %}
+}
+
+/// 更新 {{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Update{{ entity.name }}Dto {
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if field.extra_config.clearable %}
+    /// 三态 Option: None=不变更, Some(None)=清空, Some(Some(v))=赋新值
+    /// 字段 '{{ field.name }}' 标记为 clearable
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub {{ field.name }}: Option<Option<{{ field.rust_type }}>>,
+{%- else %}
+    /// 二态 Option: None=不变更, Some(v)=赋新值
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+}
+
+impl Update{{ entity.name }}Dto {
+    /// 检查是否有任何字段需要更新
+    pub fn has_updates(&self) -> bool {
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+        self.{{ field.name }}.is_some() {% if not loop.last %}||{% endif %}
+{%- endif %}
+{%- endfor %}
+    }
+}
+
+/// 查询 {{ entity.description | default(value=entity.name) }} DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }}QueryDto {
+    pub tenant_id: String,
+    /// 分页：偏移量
+    #[serde(default)]
+    pub offset: Option<i64>,
+    /// 分页：限制数量
+    #[serde(default)]
+    pub limit: Option<i64>,
+{%- for field in entity.fields %}
+{%- if field.searchable %}
+    /// 搜索字段: {{ field.description | default(value=field.name) }}
+    #[serde(default)]
+    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+{%- endif %}
+{%- endfor %}
+}
+
+/// {{ entity.description | default(value=entity.name) }} 列表响应 DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct {{ entity.name }}ListDto {
+    pub items: Vec<{{ entity.name }}Dto>,
+    pub total: i64,
+}

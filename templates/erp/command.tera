@@ -1,0 +1,266 @@
+{# ERP Domain Command Template (Command + Handler 合一) #}
+{# 支持: typed_id, cqrs::ApplicationError, SyncStrategy, version += 1 #}
+{%- if method.name == "Create" %}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+{% if entity.extra_config.typed_id -%}
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- endif %}
+
+/// 创建 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Create{{ entity.name }}Command {
+    pub tenant_id: String,
+    pub operator_id: String,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+    pub {{ field.name }}: {{ field.rust_type }},
+{%- endif %}
+{%- endfor %}
+}
+
+impl Command for Create{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 创建 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Create{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Create{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Create{{ entity.name }}Command> for Create{{ entity.name }}CommandHandler<R> {
+    type Output = {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %};
+
+    async fn handle(&self, command: Create{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 验证必填字段
+{%- for field in entity.fields %}
+{%- if not field.nullable and not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "version" %}
+        if command.{{ field.name }}.is_empty() {
+            return Err(ApplicationError::validation(vec![
+                "{{ field.description | default(value=field.name) }}不能为空".to_string()
+            ]));
+        }
+{%- endif %}
+{%- endfor %}
+
+        // 创建实体
+        {% if entity.extra_config.typed_id -%}
+        let id = {{ entity.name }}Id::new();
+        {%- else -%}
+        let id = Uuid::new_v4();
+        {%- endif %}
+
+        let mut entity = {{ entity.name }} {
+            id,
+            tenant_id: command.tenant_id,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+            {{ field.name }}: command.{{ field.name }},
+{%- endif %}
+{%- endfor %}
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            {% if entity.fields | filter(attribute="name", value="version") | first -%}
+            version: 1,
+            {%- endif %}
+        };
+
+        // 业务验证
+        entity.validate()?;
+
+        // 持久化
+        self.repository.create(&entity).await?;
+
+        Ok(entity.id)
+    }
+}
+
+{%- elif method.name == "Update" %}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 更新 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Update{{ entity.name }}Command {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+    pub operator_id: String,
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if field.extra_config.clearable %}
+    /// 三态 Option: None=不变更, Some(None)=清空, Some(Some(v))=赋新值
+    pub {{ field.name }}: Option<Option<{{ field.rust_type }}>>,
+{%- else %}
+    /// 二态 Option: None=不变更, Some(v)=赋新值
+    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+}
+
+impl Command for Update{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 更新 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Update{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Update{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Update{{ entity.name }}Command> for Update{{ entity.name }}CommandHandler<R> {
+    type Output = ();
+
+    async fn handle(&self, command: Update{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 查找实体
+        let mut entity = self.repository
+            .find_by_id(&command.id, &command.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", command.id)
+            ))?;
+
+        // 应用变更
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
+{%- if field.extra_config.clearable %}
+        // 三态 Option 处理
+        if let Some(value) = command.{{ field.name }} {
+            entity.{{ field.name }} = value;
+        }
+{%- else %}
+        if let Some(value) = command.{{ field.name }} {
+            entity.{{ field.name }} = value;
+        }
+{%- endif %}
+{%- endif %}
+{%- endfor %}
+
+        entity.updated_at = chrono::Utc::now();
+        {% if entity.fields | filter(attribute="name", value="version") | first -%}
+        entity.version += 1;
+        {%- endif %}
+
+        // 业务验证
+        entity.validate()?;
+
+        // 持久化（乐观锁在 repository 层处理）
+        self.repository.update(&entity).await?;
+
+        Ok(())
+    }
+}
+
+{%- elif method.name == "Delete" %}
+use cqrs::command::{Command, CommandHandler};
+use cqrs::error::{ApplicationError, ApplicationResult};
+use cqrs::sync_strategy::SyncStrategy;
+{% if entity.extra_config.typed_id -%}
+use kernel::types::entity_id::EntityId;
+use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }}Id;
+{%- else -%}
+use uuid::Uuid;
+{%- endif %}
+use async_trait::async_trait;
+
+use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+
+/// 删除 {{ entity.description | default(value=entity.name) }} Command
+#[derive(Debug, Clone)]
+pub struct Delete{{ entity.name }}Command {
+    pub id: {% if entity.extra_config.typed_id %}{{ entity.name }}Id{% else %}Uuid{% endif %},
+    pub tenant_id: String,
+    pub operator_id: String,
+}
+
+impl Command for Delete{{ entity.name }}Command {
+    fn sync_strategy(&self) -> SyncStrategy {
+        {% if entity.extra_config.sync_strategy -%}
+        SyncStrategy::{{ entity.extra_config.sync_strategy }}
+        {%- else -%}
+        SyncStrategy::NearTime
+        {%- endif %}
+    }
+}
+
+/// 删除 {{ entity.description | default(value=entity.name) }} Handler
+pub struct Delete{{ entity.name }}CommandHandler<R: {{ entity.name }}Repository> {
+    repository: R,
+}
+
+impl<R: {{ entity.name }}Repository> Delete{{ entity.name }}CommandHandler<R> {
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+}
+
+#[async_trait]
+impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Delete{{ entity.name }}Command> for Delete{{ entity.name }}CommandHandler<R> {
+    type Output = ();
+
+    async fn handle(&self, command: Delete{{ entity.name }}Command) -> ApplicationResult<Self::Output> {
+        // 验证实体存在
+        let entity = self.repository
+            .find_by_id(&command.id, &command.tenant_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found(
+                format!("{{ entity.description | default(value=entity.name) }} {} 不存在", command.id)
+            ))?;
+
+        // 业务验证（例如：检查是否可删除）
+        // entity.ensure_deletable()?;
+
+        // 删除
+        self.repository.delete(&command.id, &command.tenant_id).await?;
+
+        Ok(())
+    }
+}
+
+{%- endif %}

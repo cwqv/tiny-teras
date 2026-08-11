@@ -1,0 +1,16 @@
+# Account 模块 Proto 任务配置
+# 实体: Account (account.accounts)
+# 生成后需手工调 service_methods / messages，再 buf generate 出 Rust 契约
+
+tasks:
+  - name: account_proto
+    description: "Account Complete Proto File"
+    template: "core_proto/v1"
+    template_file: "proto_complete.tera"
+    target: "tiny-protos/protos/tiny/v1/erp/account/account.proto"
+    proto_package: "tiny.v1.erp.account"
+    searchable_fields:
+      - name
+      - code_store
+    features:
+      multi_tenant: true
