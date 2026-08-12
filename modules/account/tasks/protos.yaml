@@ -1,11 +1,16 @@
 # Account 模块 Proto 任务配置
 # 实体: Account (account.accounts)
-# 生成后需手工调 service_methods / messages，再 buf generate 出 Rust 契约
+# 注意:
+#   - 模板 core_proto 目前仅存在于 um profile（templates/um/core_proto/v1），
+#     erp profile 无 core_proto → 配置写 "um/core_proto/v1" 走全局 fallback 解析。
+#   - 模板为 um 风格完整 proto 骨架（package/import/service 需手工调整为 tiny.v1.erp.account）；
+#     当前 account.proto 为 7b31141a 手工定稿，重跑生成仅作骨架参考，勿直接 apply。
+#   - 生成后需手工调 service_methods / messages，再 buf generate 出 Rust 契约
 
 tasks:
   - name: account_proto
-    description: "Account Complete Proto File"
-    template: "core_proto/v1"
+    description: "Account Complete Proto File（um 风格骨架，落地后需手工调整）"
+    template: "um/core_proto/v1"
     template_file: "proto_complete.tera"
     target: "tiny-protos/protos/tiny/v1/erp/account/account.proto"
     proto_package: "tiny.v1.erp.account"
