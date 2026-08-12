@@ -109,3 +109,14 @@ tasks:
       multi_tenant: true
       search: true
       pagination: true
+
+  # ==================== Infrastructure 层 ====================
+  # PG Repository 骨架（teras G6）：Row + to_entity + find_by_id + save(乐观锁) + delete
+  # 手工残留: find_by_code / list / count（动态 SQL、JOIN、聚合）
+  # repo_crate: 生成文件内的 crate 引用前缀（server crate 用 erp_account）
+  - name: account_repository_postgres
+    description: "Account PG Repository 骨架（teras G6 dry-run 验证）"
+    template: "core_rust_infrastructure_repository/v1"
+    template_file: "repository_postgres.tera"
+    target: "server/modules/erp/erp_account_server/src/infrastructure/repositories/postgres_account_repository.rs"
+    repo_crate: "erp_account"

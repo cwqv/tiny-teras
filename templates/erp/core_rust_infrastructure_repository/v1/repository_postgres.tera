@@ -1,0 +1,245 @@
+{# ERP PostgreSQL Repository Template (erp 风格) #}
+{# 生成扁平实体 PG repo 骨架：Row + to_entity + find_by_id + save(乐观锁) + delete + 可选 sync 方法 #}
+{# 手工残留（不在模板范围）: find_by_code / list / count（动态 SQL、JOIN、聚合） #}
+{#
+  关键能力（见 openspec tera-erp-codegen-refactor G6）:
+  - 乐观锁: WHERE table.version = EXCLUDED.version + version = table.version + 1
+  - 冲突检查: rows_affected() == 0 → 返回乐观锁冲突错误
+  - EntityId 映射: Row→Entity from_uuid().expect(...)；Entity→bind as_uuid()
+  - 可选列: 有 sync_version → find_since/get_max_sync_version；有 active 无 is_deleted → active=false 软删
+#}
+{%- set entity_crate = task.repo_crate | default(value="crate") %}
+{%- set entity_module = task.repo_entity_module | default(value=(entity.name | snake_case)) %}
+{%- set_global has_active = false %}
+{%- set_global has_is_deleted = false %}
+{%- set_global has_sync_version = false %}
+{%- for f in entity.fields %}
+{%-   if f.name == "active" %}{% set_global has_active = true %}{% endif %}
+{%-   if f.name == "is_deleted" %}{% set_global has_is_deleted = true %}{% endif %}
+{%-   if f.name == "sync_version" %}{% set_global has_sync_version = true %}{% endif %}
+{%- endfor %}
+{%- set_global has_currency_fk = false %}
+{%- for f in entity.fields %}
+{%-   if f.rust_type is defined and "CurrencyId" in f.rust_type %}
+{%-     set_global has_currency_fk = true %}
+{%-   endif %}
+{%- endfor %}
+{%- if has_is_deleted %}
+{%-   set delete_set = "is_deleted = true, updated_at = NOW()" %}
+{%-   set delete_comment = "软删除（is_deleted=true）" %}
+{%- elif has_active %}
+{%-   set delete_set = "active = false, updated_at = NOW()" %}
+{%-   set delete_comment = "归档（active=false）。迁移无 is_deleted，删除语义用归档" %}
+{%- else %}
+{%-   set delete_set = "" %}
+{%-   set delete_comment = "物理删除（无软删字段）" %}
+{%- endif %}
+{%- if has_sync_version %}
+{%-   set sync_comment = "含 sync_version，支持 NearTime 增量同步（find_since / get_max_sync_version）" %}
+{%- else %}
+{%-   set sync_comment = "无 sync_version，不参与 NearTime" %}
+{%- endif %}
+//! {{ entity.description | default(value=entity.name) }} PostgreSQL Repository — tera 生成骨架
+//!
+//! 实现 {{ entity.name }}Repository trait，操作 {{ entity.schema }}.{{ entity.table_name }} 表。
+//! - save(): UPSERT + 乐观锁 (WHERE version = EXCLUDED.version)
+//! - delete(): {{ delete_comment }}
+//! - {{ sync_comment }}
+//!
+//! 由 tiny-teras repository_postgres.tera 生成；复杂查询（find_by_code/list/count）手工补全。
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use sqlx::{FromRow, PgPool, Row};
+use uuid::Uuid;
+
+use kernel::multi_tenant::TenantId;
+use kernel::types::user_id::UserId;
+{%- if has_currency_fk %}
+use erp_base::domain::entities::currency::CurrencyId;
+{%- endif %}
+
+use {{ entity_crate }}::domain::entities::{{ entity_module }}::{ {{ entity.name }}, {{ entity.name }}Id
+{%- for field in entity.fields %}
+{%- if field.is_enum %}, {{ field.enum_rust_name | default(value=field.enum_name) }}{% endif %}
+{%- endfor %} };
+use {{ entity_crate }}::ports::{{ entity_module }}_repository::{{ entity.name }}Repository;
+use {{ entity_crate }}::ports::RepoResult;
+
+// ─── DB Row Model ───────────────────────────────────────────
+
+/// 数据库行模型 — 与 {{ entity.schema }}.{{ entity.table_name }} 表一一映射
+#[derive(Debug, Clone, FromRow)]
+pub struct {{ entity.name }}Row {
+{%- for field in entity.fields %}
+    pub {{ field.name }}: {{ self::db_type(entity=entity, field=field) }},
+{%- endfor %}
+}
+
+impl {{ entity.name }}Row {
+    /// DB Row → Domain Entity
+    pub fn to_entity(&self) -> {{ entity.name }} {
+        {{ entity.name }} {
+{%- for field in entity.fields %}
+            {{ field.name }}: {{ self::to_entity_expr(entity=entity, field=field) }},
+{%- endfor %}
+        }
+    }
+}
+
+// ─── Repository 实现 ────────────────────────────────────────
+
+pub struct Postgres{{ entity.name }}Repository {
+    pool: PgPool,
+}
+
+impl Postgres{{ entity.name }}Repository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
+    async fn find_by_id(&self, id: {{ entity.name }}Id) -> RepoResult<Option<{{ entity.name }}>> {
+        let row = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"SELECT * FROM {{ entity.schema }}.{{ entity.table_name }} WHERE id = $1"#,
+        )
+        .bind(id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| r.to_entity()))
+    }
+
+    /// UPSERT + 乐观锁。
+    /// 新增: INSERT (version=1)；更新: ON CONFLICT + WHERE version 匹配，version = 旧值 + 1
+    /// 版本不匹配 → rows_affected==0 → 返回乐观锁冲突错误
+    async fn save(&self, {{ entity.name | snake_case }}: &{{ entity.name }}) -> RepoResult<()> {
+{%- for field in entity.fields %}
+{%- if field.is_enum %}
+        let {{ field.name }}_str = {{ entity.name | snake_case }}.{{ field.name }}.map(|t| t.to_string());
+{%- endif %}
+{%- endfor %}
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO {{ entity.schema }}.{{ entity.table_name }} (
+{%- for field in entity.fields %}
+                {{ field.name }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+            )
+            VALUES (
+{%- for field in entity.fields %}
+                ${{ loop.index }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+            )
+            ON CONFLICT (id) DO UPDATE SET
+{%- for field in entity.fields %}
+{%- if not field.primary_key and field.name != "created_at" and field.name != "version" %}
+                {{ field.name }} = EXCLUDED.{{ field.name }}{% if not loop.last %},{% endif %}
+{%- endif %}
+{%- endfor %}
+                version = {{ entity.schema }}.{{ entity.table_name }}.version + 1
+            WHERE {{ entity.schema }}.{{ entity.table_name }}.version = EXCLUDED.version
+            "#,
+        )
+{%- for field in entity.fields %}
+        .bind({{ self::bind_expr(entity=entity, field=field) }}) // ${{ loop.index }}
+{%- endfor %}
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err("乐观锁冲突: {{ entity.name }} 版本不匹配，数据已被其他操作修改".into());
+        }
+        Ok(())
+    }
+
+    /// {{ delete_comment }}
+    async fn delete(&self, tenant_id: Uuid, id: {{ entity.name }}Id) -> RepoResult<()> {
+{%- if delete_set != "" %}
+        sqlx::query(
+            r#"UPDATE {{ entity.schema }}.{{ entity.table_name }}
+               SET {{ delete_set }}
+               WHERE id = $1 AND tenant_id = $2"#,
+        )
+{%- else %}
+        sqlx::query(
+            r#"DELETE FROM {{ entity.schema }}.{{ entity.table_name }}
+               WHERE id = $1 AND tenant_id = $2"#,
+        )
+{%- endif %}
+        .bind(id.as_uuid())
+        .bind(tenant_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+{%- if has_sync_version %}
+    /// NearTime 增量拉取：按 sync_version 游标查询变更
+    async fn find_since(&self, tenant_id: Uuid, since_version: i64) -> RepoResult<Vec<{{ entity.name }}>> {
+        let rows = sqlx::query_as::<_, {{ entity.name }}Row>(
+            r#"SELECT * FROM {{ entity.schema }}.{{ entity.table_name }}
+               WHERE tenant_id = $1 AND sync_version > $2
+               ORDER BY sync_version ASC"#,
+        )
+        .bind(tenant_id)
+        .bind(since_version)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| r.to_entity()).collect())
+    }
+
+    /// 当前最大 sync_version（下轮游标）
+    async fn get_max_sync_version(&self, tenant_id: Uuid) -> RepoResult<Option<i64>> {
+        let row = sqlx::query(
+            r#"SELECT MAX(sync_version) AS max_sync_version
+               FROM {{ entity.schema }}.{{ entity.table_name }}
+               WHERE tenant_id = $1"#,
+        )
+        .bind(tenant_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.get::<Option<i64>, _>("max_sync_version"))
+    }
+
+{%- endif %}
+
+    // <<< block:custom_methods
+    // 手工补全: find_by_code / list / count 等复杂查询（JOIN、聚合、动态过滤）
+    // >>>
+}
+
+{% macro db_type(entity, field) -%}
+{%- if field.primary_key %}Uuid
+{%- elif field.name == "tenant_id" %}Uuid
+{%- elif field.is_enum %}{% if field.nullable %}Option<String>{% else %}String{% endif %}
+{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}{% if field.nullable %}Option<Uuid>{% else %}Uuid{% endif %}
+{%- elif field.rust_type is defined and "UserId" in field.rust_type %}{% if field.nullable %}Option<Uuid>{% else %}Uuid{% endif %}
+{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}DateTime<Utc>
+{%- elif field.name == "sync_version" %}i64
+{%- else %}{{ field.rust_type }}{% endif %}
+{%- endmacro db_type %}
+
+{% macro to_entity_expr(entity, field) -%}
+{%- if field.primary_key %}{{ entity.name }}Id::from_uuid(self.{{ field.name }}).expect("non-nil DB PK")
+{%- elif field.name == "tenant_id" %}TenantId::from_uuid(self.{{ field.name }}).expect("non-nil DB FK")
+{%- elif field.is_enum %}self.{{ field.name }}.as_deref().map({{ field.enum_rust_name | default(value=field.enum_name) }}::from_db)
+{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}self.{{ field.name }}.map(|v| CurrencyId::from_uuid(v).expect("non-nil DB FK"))
+{%- elif field.rust_type is defined and "UserId" in field.rust_type %}self.{{ field.name }}.map(|v| UserId::from_uuid(v).expect("non-nil DB FK"))
+{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}self.{{ field.name }}
+{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}self.{{ field.name }}.clone()
+{%- else %}self.{{ field.name }}{% endif %}
+{%- endmacro to_entity_expr %}
+
+{% macro bind_expr(entity, field) -%}
+{%- if field.primary_key %}{{ entity.name | snake_case }}.{{ field.name }}.as_uuid()
+{%- elif field.name == "tenant_id" %}{{ entity.name | snake_case }}.{{ field.name }}.as_uuid()
+{%- elif field.is_enum %}&{{ field.name }}_str
+{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}.as_ref().map(|v| v.as_uuid())
+{%- elif field.rust_type is defined and "UserId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}.as_ref().map(|v| v.as_uuid())
+{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}
+{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}&{{ entity.name | snake_case }}.{{ field.name }}
+{%- else %}{{ entity.name | snake_case }}.{{ field.name }}{% endif %}
+{%- endmacro bind_expr %}
