@@ -1,0 +1,60 @@
+name: tera-compare-regression
+
+# 模板覆盖率回归检测（tera-erp-codegen-refactor G9.4）
+# 保护模板不退化：若模板改动导致覆盖率跌破阈值，CI 失败。
+#
+# 依赖：消费方 tiny 主仓的 dev_cli（tinyd tera compare）。
+# 运行时需 TINY_TERAS_DIR / TINY_PROJECT_ROOT 指向两个仓。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 模块/文件 + 覆盖率阈值（实测值：entity 70.2 / application 75-80 / repository 66.2）
+        # 阈值设为实测值的 80%，留模板迭代余量
+        include:
+          - module: account
+            file: entity
+            min: 56
+          - module: account
+            file: repository
+            min: 53
+    steps:
+      - name: Checkout tiny-teras
+        uses: actions/checkout@v4
+        with:
+          path: tiny-teras
+
+      - name: Checkout tiny (consumer)
+        uses: actions/checkout@v4
+        with:
+          repository: cwqv/tiny
+          path: tiny
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build tinyd
+        working-directory: tiny
+        run: cargo build --manifest-path dev_infra/tools/dev_cli/Cargo.toml -p dev_cli --bin tinyd
+
+      - name: Generate (${{ matrix.module }})
+        working-directory: tiny
+        env:
+          TINY_TERAS_DIR: ${{ github.workspace }}/tiny-teras
+          TINY_PROJECT_ROOT: ${{ github.workspace }}/tiny
+        run: cargo run --manifest-path dev_infra/tools/dev_cli/Cargo.toml -p dev_cli --bin tinyd -- tera gen --group ${{ matrix.module }}
+
+      - name: Compare coverage (${{ matrix.module }} ${{ matrix.file }} >= ${{ matrix.min }}%)
+        working-directory: tiny
+        env:
+          TINY_TERAS_DIR: ${{ github.workspace }}/tiny-teras
+          TINY_PROJECT_ROOT: ${{ github.workspace }}/tiny
+        run: cargo run --manifest-path dev_infra/tools/dev_cli/Cargo.toml -p dev_cli --bin tinyd -- tera compare --module ${{ matrix.module }} --file ${{ matrix.file }} --min-coverage ${{ matrix.min }}
