@@ -1,17 +1,124 @@
 # Partner 模块 Core Rust 后端任务配置
 # 实体: Partner (base.partners)
 #
-# 注意: partner 作为 G6 模板的第二个 dry-run 验证（复杂实体压力测试），
-# 本期仅配置 repository 任务（任务 2 聚焦 repo 覆盖率）。
-# entity/dto/command/query 的 tera 任务在正式落地阶段补齐。
-#
-# repo_crate: erp_partner（server crate 引用 core 类型的 crate 前缀）
+# 注意: partner 作为 G6 模板的复杂实体落地验证。
+#   - repo_crate: erp_partner（server crate 引用 core 类型的 crate 前缀）
+#   - target 已重写为 ERP 分层路径
+#   - apply 为整文件覆盖（备份在 last_applies/），
+#     手写业务逻辑需先迁入 <<< block:custom_* >>> 保护块再 apply
 
 tasks:
+  # ==================== Domain 层 ====================
+  - name: partner_domain_entity
+    description: "Partner Domain Entity（骨架，手写业务方法进 custom block）"
+    template: "core_rust_domain_entity/v1"
+    template_file: "entity.tera"
+    target: "core/domains/erp/partner/src/domain/entities/partner.rs"
+
+  # ==================== Application 层 ====================
+  - name: partner_application_dto
+    description: "Partner DTO（骨架，需手工核对三态 clearable 字段）"
+    template: "core_rust_application_dto/v1"
+    template_file: "dto_complete.tera"
+    target: "core/domains/erp/partner/src/dto/partner_dto.rs"
+    features:
+      multi_tenant: true
+      pagination: true
+      search: true
+    dto_fields:
+      create:
+        - tenant_id
+        - name
+        - is_company
+        - type
+        - email
+        - phone
+        - street
+        - city
+        - country_id
+        - vat
+        - website
+        - active
+      get:
+        - id
+        - tenant_id
+      list:
+        - tenant_id
+        - search_query
+        - is_company
+        - active
+        - limit
+        - offset
+      update:
+        - id
+        - tenant_id
+        - name
+        - is_company
+        - type
+        - email
+        - phone
+        - street
+        - city
+        - country_id
+        - vat
+        - website
+        - active
+        - version
+      delete:
+        - id
+        - tenant_id
+
+  - name: partner_application_command_create
+    description: "Partner Create Command（生成后核对合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "create_command.tera"
+    target: "core/domains/erp/partner/src/application/commands/create_partner.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Create" }
+    features: { multi_tenant: true }
+
+  - name: partner_application_command_update
+    description: "Partner Update Command（生成后核对合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "update_command.tera"
+    target: "core/domains/erp/partner/src/application/commands/update_partner.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Update" }
+    features: { multi_tenant: true }
+
+  - name: partner_application_command_delete
+    description: "Partner Delete Command（生成后核对合并 handler）"
+    template: "core_rust_application_command/v1"
+    template_file: "delete_command.tera"
+    target: "core/domains/erp/partner/src/application/commands/delete_partner.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Delete" }
+    features: { multi_tenant: true }
+
+  - name: partner_application_query_get
+    description: "Partner Get Query（生成后核对合并 handler）"
+    template: "core_rust_application_query/v1"
+    template_file: "get_query.tera"
+    target: "core/domains/erp/partner/src/application/queries/get_partner.rs"
+    architecture_mode: "cqrs"
+    method: { name: "Get" }
+    features: { multi_tenant: true }
+
+  - name: partner_application_query_list
+    description: "Partner List Query（生成后核对合并 handler）"
+    template: "core_rust_application_query/v1"
+    template_file: "list_query.tera"
+    target: "core/domains/erp/partner/src/application/queries/list_partners.rs"
+    architecture_mode: "cqrs"
+    method: { name: "List" }
+    features:
+      multi_tenant: true
+      search: true
+      pagination: true
+
   # ==================== Infrastructure 层 ====================
-  # PG Repository 骨架（teras G6 复验）：
-  #   - 42 字段大实体 + self-FK（PartnerId）+ is_deleted 软删分支
-  #   - 手写版含 sync_version 事务 save（D6 并发防撞）——模板预期无法覆盖
+  # PG Repository 骨架：手写版含事务性 save（D6 并发防撞）+ JOIN list，
+  # apply 前需把业务方法迁入 custom block
   - name: partner_repository_postgres
     description: "Partner PG Repository 骨架（teras G6 复杂实体验证）"
     template: "core_rust_infrastructure_repository/v1"

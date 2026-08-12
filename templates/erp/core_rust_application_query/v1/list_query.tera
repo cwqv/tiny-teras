@@ -4,7 +4,7 @@ use cqrs::error::{ApplicationError, ApplicationResult};
 use async_trait::async_trait;
 
 use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
-use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+use crate::ports::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
 
 /// 列表查询 {{ entity.description | default(value=entity.name) }} Query
 #[derive(Debug, Clone)]
@@ -17,7 +17,7 @@ pub struct List{{ entity.name }}sQuery {
 {%- for field in entity.fields %}
 {%- if field.searchable %}
     /// 搜索字段: {{ field.description | default(value=field.name) }}
-    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+    pub {{ field.rust_field_name }}: Option<{{ field.rust_type }}>,
 {%- endif %}
 {%- endfor %}
 }
@@ -54,7 +54,7 @@ impl<R: {{ entity.name }}Repository + Send + Sync> QueryHandler<List{{ entity.na
 
 {%- for field in entity.fields %}
 {%- if field.searchable %}
-        if let Some(value) = query.{{ field.name }} {
+        if let Some(value) = query.{{ field.rust_field_name }} {
             search_params.push(("{{ field.name }}".to_string(), value.to_string()));
         }
 {%- endif %}

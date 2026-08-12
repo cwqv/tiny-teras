@@ -11,7 +11,7 @@ use uuid::Uuid;
 use async_trait::async_trait;
 
 use crate::domain::entities::{{ entity.name | snake_case }}::{{ entity.name }};
-use crate::domain::repositories::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
+use crate::ports::{{ entity.name | snake_case }}_repository::{{ entity.name }}Repository;
 
 /// 更新 {{ entity.description | default(value=entity.name) }} Command
 #[derive(Debug, Clone)]
@@ -23,10 +23,10 @@ pub struct Update{{ entity.name }}Command {
 {%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
 {%- if field.extra_config.clearable %}
     /// 三态 Option: None=不变更, Some(None)=清空, Some(Some(v))=赋新值
-    pub {{ field.name }}: Option<Option<{{ field.rust_type }}>>,
+    pub {{ field.rust_field_name }}: Option<Option<{{ field.rust_type }}>>,
 {%- else %}
     /// 二态 Option: None=不变更, Some(v)=赋新值
-    pub {{ field.name }}: Option<{{ field.rust_type }}>,
+    pub {{ field.rust_field_name }}: Option<{{ field.rust_type }}>,
 {%- endif %}
 {%- endif %}
 {%- endfor %}
@@ -71,12 +71,12 @@ impl<R: {{ entity.name }}Repository + Send + Sync> CommandHandler<Update{{ entit
 {%- if not field.primary_key and field.name != "id" and field.name != "tenant_id" and field.name != "created_at" and field.name != "updated_at" and field.name != "created_by" and field.name != "updated_by" and field.name != "version" %}
 {%- if field.extra_config.clearable %}
         // 三态 Option 处理
-        if let Some(value) = command.{{ field.name }} {
-            entity.{{ field.name }} = value;
+        if let Some(value) = command.{{ field.rust_field_name }} {
+            entity.{{ field.rust_field_name }} = value;
         }
 {%- else %}
-        if let Some(value) = command.{{ field.name }} {
-            entity.{{ field.name }} = value;
+        if let Some(value) = command.{{ field.rust_field_name }} {
+            entity.{{ field.rust_field_name }} = value;
         }
 {%- endif %}
 {%- endif %}
