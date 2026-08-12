@@ -66,6 +66,10 @@ task_groups:
     tasks:
     - account/core_rust
     - account/protos
+  partner:
+    description: Partner 模块任务（base.partners 实体，G6 模板复杂实体 dry-run 验证）
+    tasks:
+    - partner/core_rust
 execution:
   parallel: false
   on_failure:

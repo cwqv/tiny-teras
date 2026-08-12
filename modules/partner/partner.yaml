@@ -1,0 +1,219 @@
+# Partner 模块 Tera 项目配置
+# 版本: v1
+# 描述: 联系人/公司（base.partners）模块代码生成配置
+#
+# 目的: partner 作为第二个 dry-run 验证（G6 模板的复杂实体验证）：
+#   - 42 字段大实体（account 仅 19）
+#   - self-FK（parent_id / commercial_partner_id → PartnerId）
+#   - 枚举（PartnerType）+ f64（经纬度）+ i32（color）+ 关键字字段（type/ref）
+#   - is_deleted 软删（模板 has_is_deleted 分支首次实测）
+#   - 实体无 sync_version（repo 层内部字段，模板 sync 分支不触发——见 tera-compare-partner-repository.md）
+
+project: partner
+version: v1
+description: "联系人/公司（base.partners，Odoo res.partner）"
+profile: erp_domain  # 使用 ERP 域模板
+
+entities:
+  - name: Partner
+    table_name: partners
+    schema: base
+    description: "联系人 / 公司（聚合根）"
+    typed_id: true
+    sync_strategy: NearTime
+
+    service_methods:
+      - Get
+      - List
+      - Create
+      - Update
+      - Delete
+
+    fields:
+      - name: id
+        type: Uuid
+        rust_type: "PartnerId"
+        nullable: false
+        primary_key: true
+      - name: tenant_id
+        type: String
+        rust_type: "kernel::multi_tenant::TenantId"
+        nullable: false
+      - name: name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: complete_name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: parent_id
+        type: Uuid
+        rust_type: "Option<PartnerId>"
+        nullable: true
+      - name: ref
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: lang
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: tz
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: user_id
+        type: Uuid
+        rust_type: "Option<kernel::types::user_id::UserId>"
+        nullable: true
+      - name: vat
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: company_registry
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: website
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: comment
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: active
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "true"
+      - name: employee
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+      - name: function
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: type
+        type: String
+        rust_type: "Option<PartnerType>"
+        nullable: true
+        is_enum: true
+        enum_name: PartnerType
+      - name: street
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: street2
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: zip
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: city
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: state_id
+        type: Uuid
+        rust_type: "Option<erp_base::domain::entities::country::CountryStateId>"
+        nullable: true
+      - name: country_id
+        type: Uuid
+        rust_type: "Option<erp_base::domain::entities::country::CountryId>"
+        nullable: true
+      - name: partner_latitude
+        type: f64
+        rust_type: "Option<f64>"
+        nullable: true
+      - name: partner_longitude
+        type: f64
+        rust_type: "Option<f64>"
+        nullable: true
+      - name: email
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: phone
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: is_company
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+      - name: industry_id
+        type: Uuid
+        rust_type: "Option<Uuid>"
+        nullable: true
+      - name: company_type
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: color
+        type: i32
+        rust_type: "Option<i32>"
+        nullable: true
+      - name: partner_share
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+      - name: commercial_partner_id
+        type: Uuid
+        rust_type: "Option<PartnerId>"
+        nullable: true
+      - name: commercial_company_name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: company_name
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: barcode
+        type: String
+        rust_type: "Option<String>"
+        nullable: true
+      - name: created_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+      - name: updated_at
+        type: Timestamp
+        rust_type: "chrono::DateTime<chrono::Utc>"
+        nullable: false
+      - name: created_by
+        type: Uuid
+        rust_type: "Option<kernel::types::user_id::UserId>"
+        nullable: true
+      - name: updated_by
+        type: Uuid
+        rust_type: "Option<kernel::types::user_id::UserId>"
+        nullable: true
+      - name: version
+        type: i32
+        rust_type: "i32"
+        nullable: false
+        default: 1
+      - name: is_deleted
+        type: bool
+        rust_type: "bool"
+        nullable: false
+        default: "false"
+
+    enums:
+      - name: type
+        rust_enum_name: PartnerType
+        description: "地址类型（Odoo res.partner.type）"
+        variants:
+          - { name: contact,  display: "联系人" }
+          - { name: invoice,  display: "发票地址" }
+          - { name: delivery, display: "发货地址" }
+          - { name: other,    display: "其他" }

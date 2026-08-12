@@ -72,7 +72,7 @@ use {{ entity_crate }}::ports::RepoResult;
 #[derive(Debug, Clone, FromRow)]
 pub struct {{ entity.name }}Row {
 {%- for field in entity.fields %}
-    pub {{ field.name }}: {{ self::db_type(entity=entity, field=field) }},
+    pub {{ field.rust_field_name }}: {{ self::db_type(entity=entity, field=field) }},
 {%- endfor %}
 }
 
@@ -81,7 +81,7 @@ impl {{ entity.name }}Row {
     pub fn to_entity(&self) -> {{ entity.name }} {
         {{ entity.name }} {
 {%- for field in entity.fields %}
-            {{ field.name }}: {{ self::to_entity_expr(entity=entity, field=field) }},
+            {{ field.rust_field_name }}: {{ self::to_entity_expr(entity=entity, field=field) }},
 {%- endfor %}
         }
     }
@@ -117,7 +117,7 @@ impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
     async fn save(&self, {{ entity.name | snake_case }}: &{{ entity.name }}) -> RepoResult<()> {
 {%- for field in entity.fields %}
 {%- if field.is_enum %}
-        let {{ field.name }}_str = {{ entity.name | snake_case }}.{{ field.name }}.map(|t| t.to_string());
+        let {{ field.name }}_str = {{ entity.name | snake_case }}.{{ field.rust_field_name }}.map(|t| t.to_string());
 {%- endif %}
 {%- endfor %}
 
@@ -125,7 +125,7 @@ impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
             r#"
             INSERT INTO {{ entity.schema }}.{{ entity.table_name }} (
 {%- for field in entity.fields %}
-                {{ field.name }}{% if not loop.last %},{% endif %}
+                {{ field.sql_column_name }}{% if not loop.last %},{% endif %}
 {%- endfor %}
             )
             VALUES (
@@ -136,7 +136,7 @@ impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
             ON CONFLICT (id) DO UPDATE SET
 {%- for field in entity.fields %}
 {%- if not field.primary_key and field.name != "created_at" and field.name != "version" %}
-                {{ field.name }} = EXCLUDED.{{ field.name }}{% if not loop.last %},{% endif %}
+                {{ field.sql_column_name }} = EXCLUDED.{{ field.sql_column_name }}{% if not loop.last %},{% endif %}
 {%- endif %}
 {%- endfor %}
                 version = {{ entity.schema }}.{{ entity.table_name }}.version + 1
@@ -223,23 +223,23 @@ impl {{ entity.name }}Repository for Postgres{{ entity.name }}Repository {
 {%- endmacro db_type %}
 
 {% macro to_entity_expr(entity, field) -%}
-{%- if field.primary_key %}{{ entity.name }}Id::from_uuid(self.{{ field.name }}).expect("non-nil DB PK")
-{%- elif field.name == "tenant_id" %}TenantId::from_uuid(self.{{ field.name }}).expect("non-nil DB FK")
-{%- elif field.is_enum %}self.{{ field.name }}.as_deref().map({{ field.enum_rust_name | default(value=field.enum_name) }}::from_db)
-{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}self.{{ field.name }}.map(|v| CurrencyId::from_uuid(v).expect("non-nil DB FK"))
-{%- elif field.rust_type is defined and "UserId" in field.rust_type %}self.{{ field.name }}.map(|v| UserId::from_uuid(v).expect("non-nil DB FK"))
-{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}self.{{ field.name }}
-{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}self.{{ field.name }}.clone()
-{%- else %}self.{{ field.name }}{% endif %}
+{%- if field.primary_key %}{{ entity.name }}Id::from_uuid(self.{{ field.rust_field_name }}).expect("non-nil DB PK")
+{%- elif field.name == "tenant_id" %}TenantId::from_uuid(self.{{ field.rust_field_name }}).expect("non-nil DB FK")
+{%- elif field.is_enum %}self.{{ field.rust_field_name }}.as_deref().map({{ field.enum_rust_name | default(value=field.enum_name) }}::from_db)
+{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}self.{{ field.rust_field_name }}.map(|v| CurrencyId::from_uuid(v).expect("non-nil DB FK"))
+{%- elif field.rust_type is defined and "UserId" in field.rust_type %}self.{{ field.rust_field_name }}.map(|v| UserId::from_uuid(v).expect("non-nil DB FK"))
+{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}self.{{ field.rust_field_name }}
+{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}self.{{ field.rust_field_name }}.clone()
+{%- else %}self.{{ field.rust_field_name }}{% endif %}
 {%- endmacro to_entity_expr %}
 
 {% macro bind_expr(entity, field) -%}
-{%- if field.primary_key %}{{ entity.name | snake_case }}.{{ field.name }}.as_uuid()
-{%- elif field.name == "tenant_id" %}{{ entity.name | snake_case }}.{{ field.name }}.as_uuid()
+{%- if field.primary_key %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}.as_uuid()
+{%- elif field.name == "tenant_id" %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}.as_uuid()
 {%- elif field.is_enum %}&{{ field.name }}_str
-{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}.as_ref().map(|v| v.as_uuid())
-{%- elif field.rust_type is defined and "UserId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}.as_ref().map(|v| v.as_uuid())
-{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.name }}
-{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}&{{ entity.name | snake_case }}.{{ field.name }}
-{%- else %}{{ entity.name | snake_case }}.{{ field.name }}{% endif %}
+{%- elif field.rust_type is defined and "CurrencyId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}.as_ref().map(|v| v.as_uuid())
+{%- elif field.rust_type is defined and "UserId" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}.as_ref().map(|v| v.as_uuid())
+{%- elif field.rust_type is defined and "DateTime" in field.rust_type %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}
+{%- elif field.rust_type == "String" or field.rust_type == "Option<String>" %}&{{ entity.name | snake_case }}.{{ field.rust_field_name }}
+{%- else %}{{ entity.name | snake_case }}.{{ field.rust_field_name }}{% endif %}
 {%- endmacro bind_expr %}

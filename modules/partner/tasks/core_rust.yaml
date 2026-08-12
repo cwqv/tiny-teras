@@ -1,0 +1,20 @@
+# Partner 模块 Core Rust 后端任务配置
+# 实体: Partner (base.partners)
+#
+# 注意: partner 作为 G6 模板的第二个 dry-run 验证（复杂实体压力测试），
+# 本期仅配置 repository 任务（任务 2 聚焦 repo 覆盖率）。
+# entity/dto/command/query 的 tera 任务在正式落地阶段补齐。
+#
+# repo_crate: erp_partner（server crate 引用 core 类型的 crate 前缀）
+
+tasks:
+  # ==================== Infrastructure 层 ====================
+  # PG Repository 骨架（teras G6 复验）：
+  #   - 42 字段大实体 + self-FK（PartnerId）+ is_deleted 软删分支
+  #   - 手写版含 sync_version 事务 save（D6 并发防撞）——模板预期无法覆盖
+  - name: partner_repository_postgres
+    description: "Partner PG Repository 骨架（teras G6 复杂实体验证）"
+    template: "core_rust_infrastructure_repository/v1"
+    template_file: "repository_postgres.tera"
+    target: "server/modules/erp/erp_partner_server/src/infrastructure/repositories/postgres_partner_repository.rs"
+    repo_crate: "erp_partner"
