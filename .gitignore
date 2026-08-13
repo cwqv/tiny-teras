@@ -13,3 +13,8 @@ Thumbs.db
 .reasonix/
 reasonix.toml
 .workbuddy/
+.zcode/
+
+# 备份文件（不提交）
+*.bak
+templates_backup_*/
